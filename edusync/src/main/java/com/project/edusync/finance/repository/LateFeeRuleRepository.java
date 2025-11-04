@@ -11,7 +11,7 @@ import java.util.List;
  * Spring Data JPA repository for the {@link LateFeeRule} entity.
  */
 @Repository
-public interface LateFeeRuleRepository extends JpaRepository<LateFeeRule, Integer> {
+public interface LateFeeRuleRepository extends JpaRepository<LateFeeRule, Long> {
 
     /**
      * Finds all active (or inactive) late fee rules.

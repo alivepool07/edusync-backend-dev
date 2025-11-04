@@ -12,7 +12,7 @@ import java.util.Optional;
  * Spring Data JPA repository for the {@link FeeType} entity.
  */
 @Repository
-public interface FeeTypeRepository extends JpaRepository<FeeType, Integer> {
+public interface FeeTypeRepository extends JpaRepository<FeeType, Long> {
 
     /**
      * Finds a fee type by its unique type name.

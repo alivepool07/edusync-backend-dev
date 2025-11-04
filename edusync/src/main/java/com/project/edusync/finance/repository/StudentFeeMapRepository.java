@@ -13,7 +13,7 @@ import java.util.Optional;
  * Spring Data JPA repository for the {@link StudentFeeMap} entity.
  */
 @Repository
-public interface StudentFeeMapRepository extends JpaRepository<StudentFeeMap, Integer> {
+public interface StudentFeeMapRepository extends JpaRepository<StudentFeeMap, Long> {
 
     /**
      * Finds all fee mappings for a specific student.

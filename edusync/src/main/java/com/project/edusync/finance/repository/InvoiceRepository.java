@@ -14,7 +14,7 @@ import java.util.Optional;
  * Spring Data JPA repository for the {@link Invoice} entity.
  */
 @Repository
-public interface InvoiceRepository extends JpaRepository<Invoice, Integer> {
+public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     /**
      * Finds an invoice by its unique, human-readable invoice number.

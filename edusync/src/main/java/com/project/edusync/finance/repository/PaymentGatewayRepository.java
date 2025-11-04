@@ -12,7 +12,7 @@ import java.util.Optional;
  * Spring Data JPA repository for the {@link PaymentGateway} entity.
  */
 @Repository
-public interface PaymentGatewayRepository extends JpaRepository<PaymentGateway, Integer> {
+public interface PaymentGatewayRepository extends JpaRepository<PaymentGateway, Long> {
 
     /**
      * Finds a payment gateway by its unique provider name.

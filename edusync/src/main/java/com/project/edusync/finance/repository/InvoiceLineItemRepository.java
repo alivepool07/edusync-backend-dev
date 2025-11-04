@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
  * Operations are typically cascaded from the InvoiceRepository.
  */
 @Repository
-public interface InvoiceLineItemRepository extends JpaRepository<InvoiceLineItem, Integer> {
+public interface InvoiceLineItemRepository extends JpaRepository<InvoiceLineItem, Long> {
 
     // Custom queries are rare here, but you could add:
     // List<InvoiceLineItem> findByInvoice_InvoiceId(Integer invoiceId);

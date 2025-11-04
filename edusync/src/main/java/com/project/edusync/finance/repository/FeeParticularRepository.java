@@ -12,7 +12,7 @@ import java.util.List;
  * Spring Data JPA repository for the {@link FeeParticular} entity.
  */
 @Repository
-public interface FeeParticularRepository extends JpaRepository<FeeParticular, Integer> {
+public interface FeeParticularRepository extends JpaRepository<FeeParticular, Long> {
 
     /**
      * Finds all fee particulars associated with a specific fee structure.

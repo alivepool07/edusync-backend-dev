@@ -14,7 +14,7 @@ import java.util.Optional;
  * Spring Data JPA repository for the {@link Payment} entity.
  */
 @Repository
-public interface PaymentRepository extends JpaRepository<Payment, Integer> {
+public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     /**
      * Finds all payments associated with a specific invoice.
