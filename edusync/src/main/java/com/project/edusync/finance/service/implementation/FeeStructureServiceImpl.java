@@ -1,9 +1,10 @@
-package com.project.edusync.finance.service.implementation;
+package com.project.edusync.finance.service.implementation; // Assuming 'implementation' package
 
+import com.project.edusync.common.exception.finance.FeeTypeNotFoundException;
 import com.project.edusync.finance.dto.feestructure.FeeParticularCreateDTO;
 import com.project.edusync.finance.dto.feestructure.FeeStructureCreateDTO;
 import com.project.edusync.finance.dto.feestructure.FeeStructureResponseDTO;
-import com.project.edusync.finance.exception.FeeTypeNotFoundException;
+
 import com.project.edusync.finance.mapper.FeeStructureMapper;
 import com.project.edusync.finance.model.entity.FeeParticular;
 import com.project.edusync.finance.model.entity.FeeStructure;
@@ -11,8 +12,9 @@ import com.project.edusync.finance.model.entity.FeeType;
 import com.project.edusync.finance.repository.FeeParticularRepository;
 import com.project.edusync.finance.repository.FeeStructureRepository;
 import com.project.edusync.finance.repository.FeeTypeRepository;
-import com.project.edusync.finance.service.FeeStructureService;
+import com.project.edusync.finance.service.FeeStructureService; // Import the interface
 import lombok.RequiredArgsConstructor;
+// We are no longer using ModelMapper in this method, so the import is not needed here.
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,51 +26,55 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class FeeStructureServiceImpl implements FeeStructureService {
 
-    // Inject all required repositories and the mapper
     private final FeeStructureRepository feeStructureRepository;
     private final FeeParticularRepository feeParticularRepository;
     private final FeeTypeRepository feeTypeRepository;
     private final FeeStructureMapper feeStructureMapper;
+    // We keep ModelMapper injected, as other methods (like update) might use it.
+    // private final ModelMapper modelMapper;
 
     @Override
     @Transactional
     public FeeStructureResponseDTO createFeeStructure(FeeStructureCreateDTO createDTO) {
 
-        // 1. Map and save the parent FeeStructure
+        // --- FIX: Reverted to manual mapping for entity creation ---
+
+        // 1. Manually create and set fields for the parent FeeStructure
         FeeStructure feeStructure = new FeeStructure();
         feeStructure.setName(createDTO.getName());
         feeStructure.setAcademicYear(createDTO.getAcademicYear());
         feeStructure.setDescription(createDTO.getDescription());
         feeStructure.setActive(createDTO.isActive());
+        // Note: 'isActive' in the DTO should be a boolean, not Boolean
+        // or ensure your entity's 'isActive' field is initialized to 'false' if DTO is null.
+        // Let's assume 'isActive' in FeeStructure entity is initialized.
 
         FeeStructure savedStructure = feeStructureRepository.save(feeStructure);
 
         List<FeeParticular> savedParticulars = new ArrayList<>();
 
-        // 2. Iterate and save each child FeeParticular
         if (createDTO.getParticulars() != null && !createDTO.getParticulars().isEmpty()) {
             for (FeeParticularCreateDTO particularDTO : createDTO.getParticulars()) {
-                Long feeTypeId = particularDTO.getFeeTypeId();
-                // 2a. Find the referenced FeeType
-                FeeType feeType = feeTypeRepository.findById(particularDTO.getFeeTypeId())
-                        .orElseThrow(() -> new FeeTypeNotFoundException("FeeType not found with id: " + feeTypeId));
 
-                // 2b. Map DTO to entity
+                FeeType feeType = feeTypeRepository.findById(particularDTO.getFeeTypeId())
+                        .orElseThrow(() -> new FeeTypeNotFoundException("Particular with particular Id: " + particularDTO.getFeeTypeId()));
+
+                // 2. Manually create and set fields for the child FeeParticular
                 FeeParticular particular = new FeeParticular();
                 particular.setName(particularDTO.getName());
                 particular.setAmount(particularDTO.getAmount());
                 particular.setFrequency(particularDTO.getFrequency());
 
-                // 2c. Set relationships
+                // 3. Set relationships
                 particular.setFeeType(feeType);
-                particular.setFeeStructure(savedStructure); // Link to parent
+                particular.setFeeStructure(savedStructure);
 
-                // 2d. Save the particular
+                // 4. Save the new, guaranteed-transient entity
                 savedParticulars.add(feeParticularRepository.save(particular));
             }
         }
 
-        // 3. Map the saved entities to the response DTO
+        // 5. Use the mapper for the *response* (which is safe)
         return feeStructureMapper.toDto(savedStructure, savedParticulars);
     }
 
@@ -80,9 +86,7 @@ public class FeeStructureServiceImpl implements FeeStructureService {
 
         return structures.stream()
                 .map(structure -> {
-                    // For each structure, find its particulars
                     List<FeeParticular> particulars = feeParticularRepository.findByFeeStructure_Id(structure.getId());
-                    // Map to the response DTO
                     return feeStructureMapper.toDto(structure, particulars);
                 })
                 .collect(Collectors.toList());
