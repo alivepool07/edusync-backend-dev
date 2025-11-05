@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,6 +44,14 @@ public class AcademicClassServiceImpl implements AcademicClassService {
         return academicClassRepository.findAll().stream()
                 .map(this::toClassResponseDto) // Use private helper for conversion
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public AcademicClassResponseDto getClassById(UUID classId) {
+        log.info("Fetching academic class with id: {}", classId);
+        AcademicClass academicClass = academicClassRepository.findById(classId)
+                .orElseThrow(() -> new RuntimeException("No resource found"));
+        return toClassResponseDto(academicClass); // Use private helper
     }
 
     private AcademicClassResponseDto toClassResponseDto(AcademicClass entity) {

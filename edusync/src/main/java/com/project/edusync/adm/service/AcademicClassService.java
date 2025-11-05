@@ -5,6 +5,7 @@ import com.project.edusync.adm.model.dto.response.AcademicClassResponseDto;
 import jakarta.transaction.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface AcademicClassService {
 
@@ -13,4 +14,7 @@ public interface AcademicClassService {
 
     @Transactional
     List<AcademicClassResponseDto> getAllClasses();
+
+    @Transactional
+    AcademicClassResponseDto getClassById(UUID classId);
 }

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * REST Controller for managing Academic Classes and their Sections.
@@ -52,6 +53,12 @@ public class AcademicClassController {
     @GetMapping("/classes")
     public ResponseEntity<List<AcademicClassResponseDto>> getAllClasses(){
         List<AcademicClassResponseDto> response = academicClassService.getAllClasses();
+        return new ResponseEntity<>(response,HttpStatus.OK);
+    }
+
+    @GetMapping("/classes/{classId}")
+    public ResponseEntity<AcademicClassResponseDto> getClassById(@Valid @PathVariable UUID classId){
+        AcademicClassResponseDto response = academicClassService.getClassById(classId);
         return new ResponseEntity<>(response,HttpStatus.OK);
     }
 }
