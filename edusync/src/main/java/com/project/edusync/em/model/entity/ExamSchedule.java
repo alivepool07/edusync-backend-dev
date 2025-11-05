@@ -1,5 +1,8 @@
 package com.project.edusync.em.model.entity;
 
+import com.project.edusync.adm.model.entity.AcademicClass;
+import com.project.edusync.adm.model.entity.Section;
+import com.project.edusync.adm.model.entity.Subject;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -29,16 +32,17 @@ public class ExamSchedule {
     @Column(name = "schedule_id")
     private Long scheduleId;
 
-    // --- Foreign Keys ---
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "class_id", nullable = false)
+    private AcademicClass academicClass; // External key to Academics.classes
 
-    @Column(name = "class_id", nullable = false)
-    private Long classId; // External key to Academics.classes
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "section_id") // This relationship is optional
+    private Section section; // External key to Academics.sections
 
-    @Column(name = "section_id")
-    private Long sectionId; // External key to Academics.sections
-
-    @Column(name = "subject_id", nullable = false)
-    private Long subjectId; // External key to Academics.subjects
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "subject_id", nullable = false)
+    private Subject subject; // External key to Academics.subjects
 
     // --- Columns ---
 

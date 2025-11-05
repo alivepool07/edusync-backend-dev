@@ -1,5 +1,7 @@
 package com.project.edusync.em.model.entity;
 
+import com.project.edusync.adm.model.entity.AcademicClass;
+import com.project.edusync.adm.model.entity.Subject;
 import com.project.edusync.common.model.AuditableEntity;
 import com.project.edusync.em.model.enums.DifficultyLevel;
 import com.project.edusync.em.model.enums.QuestionType;
@@ -32,11 +34,13 @@ public class QuestionBank extends AuditableEntity {
 
     // --- Foreign Keys ---
 
-    @Column(name = "subject_id", nullable = false)
-    private Long subjectId; // External key to Academics.subjects
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "subject_id", nullable = false)
+    private Subject subject; // External key to Academics.subjects
 
-    @Column(name = "class_id", nullable = false)
-    private Long classId; // External key to Academics.classes
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "class_id", nullable = false)
+    private AcademicClass academicClass; // External key to Academics.classes
 
     // --- Columns ---
 
@@ -91,5 +95,3 @@ public class QuestionBank extends AuditableEntity {
     )
     private Set<PaperQuestionMap> paperMappings = new HashSet<>();
 }
-
-

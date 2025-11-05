@@ -1,37 +1,31 @@
 package com.project.edusync.em.model.dto.ResponseDTO;
-
-
-import com.project.edusync.em.model.enums.ExamType;
+import com.project.edusync.em.model.enums.StudentAttendanceStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * DTO for sending Exam data to the client.
- * Includes the public UUID and all audit fields.
+ * DTO for sending StudentMark data back to the client.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ExamResponseDTO {
+public class StudentMarkResponseDTO {
 
     private UUID uuid;
-    private String name;
-    private String academicYear;
-    private ExamType examType;
-    private LocalDate startDate;
-    private LocalDate endDate;
-    private boolean isPublished;
+    private Long scheduleId;
+    private Long studentId;
+    private BigDecimal marksObtained;
+    private StudentAttendanceStatus attendanceStatus;
+    private String grade; // This is calculated and set by the service
+    private String remarks;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;
     private String updatedBy;
-
-
 }

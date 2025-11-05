@@ -1,6 +1,7 @@
 package com.project.edusync.em.model.entity;
 import com.project.edusync.common.model.AuditableEntity;
 import com.project.edusync.em.model.enums.StudentAttendanceStatus;
+import com.project.edusync.uis.model.entity.Student;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,8 +27,9 @@ public class StudentMark extends AuditableEntity {
 
     // --- Foreign Keys ---
 
-    @Column(name = "student_id", nullable = false)
-    private Long studentId; // External key to Users.students
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "student_id", nullable = false)
+    private Student student; // External key to Users.students
 
     // --- Columns ---
 
