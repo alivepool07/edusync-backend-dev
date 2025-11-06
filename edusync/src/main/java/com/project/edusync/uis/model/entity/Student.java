@@ -28,8 +28,8 @@ public class Student extends AuditableEntity {
     @Column(name = "enrollment_date")
     private LocalDate enrollmentDate;
 
-    @Column(name = "roll_no")
-    private LocalDate rollNo;
+    @Column(name = "roll_no", nullable = false)
+    private Integer rollNo;
 
     // This is the "Soft Delete" flag.
     @Column(name = "is_active", nullable = false)
