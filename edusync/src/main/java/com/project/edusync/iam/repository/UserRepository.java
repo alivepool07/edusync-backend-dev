@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Optional;
+import java.util.Set;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
     UserDetails findByUsername(String username);
@@ -28,4 +29,7 @@ public interface UserRepository extends JpaRepository<User, Integer> {
     Optional<User> findByUsernameWithAuthorities(@Param("username") String username);
 
     boolean existsByEmail(String email);
+
+    @Query("SELECT u.email FROM User u WHERE u.email IN :emails")
+    Set<String> findEmailsThatExist(@Param("emails") Set<String> emails);
 }
