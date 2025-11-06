@@ -212,6 +212,67 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
 
+    @Override
+    @Transactional
+    public InvoiceResponseDTO applyLateFee(Long invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new InvoiceNotFoundException("Invoice not found with Invoice ID:  " + invoiceId));
+
+        // 1. Validation Checks
+        if (invoice.getStatus() == InvoiceStatus.PAID || invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new InvalidPaymentOperationException("Cannot apply late fee to a " + invoice.getStatus() + " invoice.");
+        }
+        if (invoice.getDueDate().isAfter(LocalDate.now())) {
+            throw new InvalidPaymentOperationException("Cannot apply late fee to an invoice that is not yet overdue.");
+        }
+        // Check if a late fee has already been applied
+        if (invoice.getLateFeeAmount().compareTo(BigDecimal.ZERO) > 0) {
+            throw new InvalidPaymentOperationException("A late fee has already been applied to this invoice.");
+        }
+
+        // 2. TODO: Find the applicable LateFeeRule from the repository.
+        // For now, we will use a hardcoded value as discussed.
+        BigDecimal lateFee = new BigDecimal("250.00"); // Hardcoded fee
+
+        // 3. Create a new line item for the fee
+        InvoiceLineItem feeLineItem = new InvoiceLineItem();
+        feeLineItem.setDescription("Late Payment Fee");
+        feeLineItem.setAmount(lateFee);
+
+        // 4. Add line item and update totals
+        invoice.addLineItem(feeLineItem);
+        invoice.setLateFeeAmount(lateFee);
+        invoice.setTotalAmount(invoice.getTotalAmount().add(lateFee));
+        invoice.setStatus(InvoiceStatus.OVERDUE); // Ensure it's marked as overdue
+
+        // 5. Save and return DTO
+        Invoice updatedInvoice = invoiceRepository.save(invoice);
+        return invoiceMapper.toDto(updatedInvoice);
+    }
+
+
+    @Override
+    @Transactional
+    public InvoiceResponseDTO cancelInvoice(Long invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new InvoiceNotFoundException("Invoice not found with Invoice ID:  " + invoiceId));
+
+        // 1. Validation Checks
+        if (invoice.getStatus() == InvoiceStatus.PAID) {
+            throw new InvalidPaymentOperationException("Cannot cancel an invoice that has already been paid.");
+        }
+        if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new InvalidPaymentOperationException("Invoice is already cancelled.");
+        }
+
+        // 2. Set status to CANCELLED
+        invoice.setStatus(InvoiceStatus.CANCELLED);
+
+        // 3. Save and return DTO
+        Invoice updatedInvoice = invoiceRepository.save(invoice);
+        return invoiceMapper.toDto(updatedInvoice);
+    }
+
     // --- Private Helper Methods ---
 
     /**

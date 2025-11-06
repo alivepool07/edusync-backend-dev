@@ -74,4 +74,23 @@ public class InvoiceController {
         return new ResponseEntity<>(pdfBytes, headers, HttpStatus.OK);
     }
 
+    /**
+     * POST /api/v1/finance/invoices/{invoiceId}/apply-late-fee
+     * Manually applies a late fee to an overdue invoice.
+     */
+    @PostMapping("/{invoiceId}/apply-late-fee")
+    public ResponseEntity<InvoiceResponseDTO> applyLateFee(@PathVariable Long invoiceId) {
+        InvoiceResponseDTO response = invoiceService.applyLateFee(invoiceId);
+        return new ResponseEntity<>(response, HttpStatus.OK); // OK, as we updated an existing resource
+    }
+
+    /**
+     * POST /api/v1/finance/invoices/{invoiceId}/cancel
+     * Cancels an invoice (e.g., if issued in error).
+     */
+    @PostMapping("/{invoiceId}/cancel")
+    public ResponseEntity<InvoiceResponseDTO> cancelInvoice(@PathVariable Long invoiceId) {
+        InvoiceResponseDTO response = invoiceService.cancelInvoice(invoiceId);
+        return new ResponseEntity<>(response, HttpStatus.OK); // OK, as we updated an existing resource
+    }
 }

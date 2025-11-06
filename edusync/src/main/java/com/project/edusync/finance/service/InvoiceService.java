@@ -25,7 +25,7 @@ public interface InvoiceService {
 
 
     /**
-     * NEW METHOD: Retrieves a paginated list of all invoices.
+     * Retrieves a paginated list of all invoices.
      *
      * @param pageable Pagination and sorting information.
      * @return A page of InvoiceResponseDTOs.
@@ -50,7 +50,7 @@ public interface InvoiceService {
 
 
     /**
-     * NEW: Retrieves all invoices for a SPECIFIC student.
+     * Retrieves all invoices for a SPECIFIC student.
      * (Temporary method for testing parent logic without auth).
      *
      * @return A List of InvoiceResponseDTOs.
@@ -59,12 +59,28 @@ public interface InvoiceService {
 
 
     /**
-     * NEW: Retrieves a single invoice by its ID.
+     * Retrieves a single invoice by its ID.
      * (Insecure: Does not check for parent ownership yet).
      *
      * @param invoiceId The ID of the invoice to retrieve.
      * @return The response DTO of the found invoice.
      */
     InvoiceResponseDTO getInvoiceByIdForParent(Long invoiceId);
+
+    /**
+     * Manually applies a late fee to an overdue invoice.
+     *
+     * @param invoiceId The ID of the invoice.
+     * @return The updated invoice response DTO.
+     */
+    InvoiceResponseDTO applyLateFee(Long invoiceId);
+
+    /**
+     * Cancels an invoice (e.g., if issued in error).
+     *
+     * @param invoiceId The ID of the invoice to cancel.
+     * @return The updated (cancelled) invoice response DTO.
+     */
+    InvoiceResponseDTO cancelInvoice(Long invoiceId);
     // We will add other methods like generate-bulk, get, etc., here later.
 }
