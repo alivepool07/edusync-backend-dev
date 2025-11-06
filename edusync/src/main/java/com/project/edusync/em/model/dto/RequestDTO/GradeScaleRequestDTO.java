@@ -20,21 +20,20 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class GradeScaleRequestDTO {
-
     @NotBlank(message = "Grade name is required")
     private String gradeName;
 
-    @NotNull(message = "Min percentage is required")
-    @DecimalMin(value = "0.0")
-    @DecimalMax(value = "100.0")
+    @NotNull(message = "Minimum percentage is required")
+    @DecimalMin(value = "0.0", message = "Minimum percentage cannot be less than 0")
+    @DecimalMax(value = "100.0", message = "Minimum percentage cannot be more than 100")
     private BigDecimal minPercentage;
 
-    @NotNull(message = "Max percentage is required")
-    @DecimalMin(value = "0.0")
-    @DecimalMax(value = "100.0")
+    @NotNull(message = "Maximum percentage is required")
+    @DecimalMin(value = "0.0", message = "Maximum percentage cannot be less than 0")
+    @DecimalMax(value = "100.0", message = "Maximum percentage cannot be more than 100")
     private BigDecimal maxPercentage;
 
-    // Optional grade point
-    @DecimalMin(value = "0.0")
+    @DecimalMin(value = "0.0", message = "Grade points cannot be negative")
     private BigDecimal gradePoints;
+
 }
