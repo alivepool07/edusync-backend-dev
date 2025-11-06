@@ -17,15 +17,17 @@ import java.util.UUID;
 @AllArgsConstructor
 public class StudentMarkResponseDTO {
 
-    private UUID uuid;
+    private UUID markUuid;
     private Long scheduleId;
+
+    // --- Rich Student Data for UI Grid ---
     private Long studentId;
+    private String studentName;       // e.g., "John Doe"
+    private String enrollmentNumber;  // e.g., "ENR-2025-123"
+
+    // --- Mark Data ---
     private BigDecimal marksObtained;
     private StudentAttendanceStatus attendanceStatus;
-    private String grade; // This is calculated and set by the service
+    private String grade;
     private String remarks;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private String createdBy;
-    private String updatedBy;
 }
