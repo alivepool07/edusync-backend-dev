@@ -25,6 +25,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -75,10 +76,15 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("Generating access token for user");
         String accessToken = authUtil.generateAccessToken(user.getUsername(), user.getRoles());
-        log.info("Generating refresh token");
-        String refreshToken = refreshTokenService.createRefreshToken(user, ipAddress).getToken();
-
-        user.setLastLoginTimestamp(LocalDateTime.now());
+        String refreshToken = null;
+        if(loginRequest.rememberMe()){
+            log.info("Generating refresh token");
+            refreshToken = refreshTokenService.createRefreshToken(user, ipAddress).getToken();
+        }
+        log.info("Fetching roles of the user");
+        Set<String> roles = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .collect(Collectors.toSet());
 
         // 5. Prepare user DTO
         UserDetailsDto userDetailsDto = new UserDetailsDto(
@@ -87,8 +93,20 @@ public class AuthServiceImpl implements AuthService {
                 user.getEmail(),
                 user.getRoles().stream().map(Role::getName).collect(Collectors.toSet())
         );
+        boolean isFirstLogin = (user.getLastLoginTimestamp() == null);
+
+        // 6. Update Last Login Timestamp (Conditional)
+        if (!isFirstLogin) {
+            // Only update if it's NOT the first login.
+            // If it IS the first login, we leave it NULL so the flag persists
+            // until they actually change the password.
+            user.setLastLoginTimestamp(LocalDateTime.now());
+            userRepository.save(user);
+        } else {
+            log.info("User {} is logging in for the first time. Password change required.", user.getUsername());
+        }
         log.info("User logged in successfully");
-        return new LoginResponse(accessToken, refreshToken, userDetailsDto);
+        return new LoginResponse(accessToken, refreshToken, userDetailsDto, roles, isFirstLogin);
     }
 
     @Override
