@@ -6,19 +6,32 @@ import com.project.edusync.iam.model.entity.User;
 import com.project.edusync.iam.repository.UserRepository;
 import com.project.edusync.uis.config.MediaUploadProperties;
 import com.project.edusync.uis.mapper.*;
+import com.project.edusync.uis.model.dto.profile.AddressDTO;
 import com.project.edusync.uis.model.dto.profile.ComprehensiveUserProfileResponseDTO;
+import com.project.edusync.uis.model.dto.profile.GuardianProfileDTO;
 import com.project.edusync.uis.model.dto.profile.ProfileImageUploadCompleteRequestDTO;
 import com.project.edusync.uis.model.dto.profile.ProfileImageUploadInitRequestDTO;
 import com.project.edusync.uis.model.dto.profile.ProfileImageUploadInitResponseDTO;
 import com.project.edusync.uis.model.dto.profile.StaffProfileDTO;
+import com.project.edusync.uis.model.dto.profile.StudentMedicalAllergyDTO;
+import com.project.edusync.uis.model.dto.profile.StudentMedicalRecordDTO;
 import com.project.edusync.uis.model.dto.profile.UserProfileDTO;
 import com.project.edusync.uis.model.dto.profile.UserProfileUpdateDTO;
+import com.project.edusync.uis.model.entity.Address;
+import com.project.edusync.uis.model.entity.Guardian;
+import com.project.edusync.uis.model.entity.Student;
+import com.project.edusync.uis.model.entity.StudentGuardianRelationship;
 import com.project.edusync.uis.model.entity.UserAddress;
 import com.project.edusync.uis.model.entity.UserProfile;
+import com.project.edusync.uis.model.entity.medical.StudentMedicalAllergy;
+import com.project.edusync.uis.model.entity.medical.StudentMedicalRecord;
+import com.project.edusync.uis.model.enums.AllergySeverity;
 import com.project.edusync.uis.model.enums.StaffType;
 import com.project.edusync.uis.repository.*;
 import com.project.edusync.uis.repository.details.PrincipalDetailsRepository;
 import com.project.edusync.uis.repository.details.TeacherDetailsRepository;
+import com.project.edusync.uis.repository.medical.StudentMedicalAllergyRepository;
+import com.project.edusync.uis.repository.medical.StudentMedicalRecordRepository;
 import com.project.edusync.uis.service.ProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,11 +67,16 @@ public class ProfileServiceImpl implements ProfileService {
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
     private final UserAddressRepository userAddressRepository;
+    private final AddressRepository addressRepository;
 
     // --- Role-Specific Repositories ---
     private final StudentRepository studentRepository;
     private final StaffRepository staffRepository;
     private final GuardianRepository guardianRepository;
+    private final StudentGuardianRelationshipRepository studentGuardianRelationshipRepository;
+
+    private final StudentMedicalRecordRepository studentMedicalRecordRepository;
+    private final StudentMedicalAllergyRepository studentMedicalAllergyRepository;
 
     // --- Detailed Information Repositories (Extension Tables) ---
     private final TeacherDetailsRepository teacherDetailsRepository;
@@ -304,6 +322,149 @@ public class ProfileServiceImpl implements ProfileService {
         return userProfileMapper.toDto(saved, user);
     }
 
+    @Override
+    @Transactional
+    public AddressDTO addMyAddress(Long userId, AddressDTO request) {
+        UserProfile profile = findProfileByUserId(userId);
+
+        Address address = new Address();
+        address.setAddressLine1(request.getAddressLine1());
+        address.setAddressLine2(request.getAddressLine2());
+        address.setCity(request.getCity());
+        address.setStateProvince(request.getState());
+        address.setPostalCode(request.getPostalCode());
+        address.setCountry(request.getCountry());
+        Address savedAddress = addressRepository.save(address);
+
+        UserAddress userAddress = new UserAddress();
+        userAddress.setUserProfile(profile);
+        userAddress.setAddress(savedAddress);
+        userAddress.setAddressType(request.getAddressType());
+        userAddressRepository.save(userAddress);
+
+        return addressMapper.toDto(userAddress);
+    }
+
+    @Override
+    @Transactional
+    public AddressDTO updateMyAddress(Long userId, Long addressId, AddressDTO request) {
+        UserProfile profile = findProfileByUserId(userId);
+        UserAddress userAddress = userAddressRepository.findByAddress_IdAndUserProfile_Id(addressId, profile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Address", "id", addressId));
+
+        Address address = userAddress.getAddress();
+        address.setAddressLine1(request.getAddressLine1());
+        address.setAddressLine2(request.getAddressLine2());
+        address.setCity(request.getCity());
+        address.setStateProvince(request.getState());
+        address.setPostalCode(request.getPostalCode());
+        address.setCountry(request.getCountry());
+        userAddress.setAddressType(request.getAddressType());
+
+        addressRepository.save(address);
+        userAddressRepository.save(userAddress);
+        return addressMapper.toDto(userAddress);
+    }
+
+    @Override
+    @Transactional
+    public void deleteMyAddress(Long userId, Long addressId) {
+        UserProfile profile = findProfileByUserId(userId);
+        UserAddress userAddress = userAddressRepository.findByAddress_IdAndUserProfile_Id(addressId, profile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Address", "id", addressId));
+
+        userAddressRepository.delete(userAddress);
+        addressRepository.delete(userAddress.getAddress());
+    }
+
+    @Override
+    @Transactional
+    public StudentMedicalRecordDTO createMyMedicalRecord(Long userId, StudentMedicalRecordDTO request) {
+        Student student = findStudentByUserId(userId);
+
+        if (studentMedicalRecordRepository.findByStudent_Id(student.getId()).isPresent()) {
+            throw new EdusyncException("Medical record already exists for this student.", HttpStatus.CONFLICT);
+        }
+
+        StudentMedicalRecord record = new StudentMedicalRecord();
+        record.setStudent(student);
+        record.setPrimaryCarePhysician(request.getPhysicianName());
+        record.setPhysicianPhone(request.getPhysicianPhone());
+        record.setInsuranceProvider(request.getInsuranceProvider());
+        record.setInsurancePolicyNumber(request.getInsurancePolicyNumber());
+        StudentMedicalRecord saved = studentMedicalRecordRepository.save(record);
+
+        return toMedicalRecordDto(saved, request.getEmergencyContactName(), request.getEmergencyContactPhone());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StudentMedicalRecordDTO getMyMedicalRecord(Long userId) {
+        Student student = findStudentByUserId(userId);
+
+        StudentMedicalRecord record = studentMedicalRecordRepository.findByStudent_Id(student.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("StudentMedicalRecord", "studentId", student.getId()));
+
+        return toMedicalRecordDto(record, null, null);
+    }
+
+    @Override
+    @Transactional
+    public StudentMedicalRecordDTO updateMyMedicalRecord(Long userId, StudentMedicalRecordDTO request) {
+        Student student = findStudentByUserId(userId);
+
+        StudentMedicalRecord record = studentMedicalRecordRepository.findByStudent_Id(student.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("StudentMedicalRecord", "studentId", student.getId()));
+
+        record.setPrimaryCarePhysician(request.getPhysicianName());
+        record.setPhysicianPhone(request.getPhysicianPhone());
+        record.setInsuranceProvider(request.getInsuranceProvider());
+        record.setInsurancePolicyNumber(request.getInsurancePolicyNumber());
+        StudentMedicalRecord saved = studentMedicalRecordRepository.save(record);
+
+        return toMedicalRecordDto(saved, request.getEmergencyContactName(), request.getEmergencyContactPhone());
+    }
+
+    @Override
+    @Transactional
+    public StudentMedicalAllergyDTO addMyMedicalAllergy(Long userId, StudentMedicalAllergyDTO request) {
+        Student student = findStudentByUserId(userId);
+        StudentMedicalRecord record = studentMedicalRecordRepository.findByStudent_Id(student.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("StudentMedicalRecord", "studentId", student.getId()));
+
+        StudentMedicalAllergy allergy = new StudentMedicalAllergy();
+        allergy.setAllergyName(request.getAllergy());
+        allergy.setSeverity(parseSeverity(request.getSeverity()));
+        allergy.setReactionDetails(request.getNotes());
+        allergy.setLifeThreatening(AllergySeverity.LIFE_THREATENING == allergy.getSeverity());
+        allergy.setMedicalRecord(record);
+
+        StudentMedicalAllergy saved = studentMedicalAllergyRepository.save(allergy);
+        return toAllergyDto(saved);
+    }
+
+    @Override
+    @Transactional
+    public void deleteMyMedicalAllergy(Long userId, Long allergyId) {
+        Student student = findStudentByUserId(userId);
+        StudentMedicalRecord record = studentMedicalRecordRepository.findByStudent_Id(student.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("StudentMedicalRecord", "studentId", student.getId()));
+
+        StudentMedicalAllergy allergy = studentMedicalAllergyRepository
+                .findByIdAndMedicalRecord_Id(allergyId, record.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("StudentMedicalAllergy", "id", allergyId));
+        studentMedicalAllergyRepository.delete(allergy);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GuardianProfileDTO> getMyGuardians(Long userId) {
+        Student student = findStudentByUserId(userId);
+        return studentGuardianRelationshipRepository.findByStudent(student).stream()
+                .map(this::toGuardianProfileDto)
+                .toList();
+    }
+
     private void validateUploadInitRequest(ProfileImageUploadInitRequestDTO request) {
         if (request.getSizeBytes() > mediaUploadProperties.getMaxFileSizeBytes()) {
             throw new EdusyncException("File size exceeds allowed limit.", HttpStatus.BAD_REQUEST);
@@ -329,6 +490,76 @@ public class ProfileServiceImpl implements ProfileService {
     private User findUserById(Long userId) {
         return userRepository.findById(userId.intValue())
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+    }
+
+    private UserProfile findProfileByUserId(Long userId) {
+        User user = findUserById(userId);
+        return userProfileRepository.findByUser(user)
+                .orElseThrow(() -> new ResourceNotFoundException("UserProfile", "userId", userId));
+    }
+
+    private Student findStudentByUserId(Long userId) {
+        return studentRepository.findByUserProfile_User_Id(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", "userId", userId));
+    }
+
+    private StudentMedicalRecordDTO toMedicalRecordDto(StudentMedicalRecord record, String emergencyContactName, String emergencyContactPhone) {
+        List<StudentMedicalAllergyDTO> allergies = record.getAllergies().stream()
+                .map(this::toAllergyDto)
+                .toList();
+
+        return new StudentMedicalRecordDTO(
+                record.getId(),
+                record.getPrimaryCarePhysician(),
+                record.getPhysicianPhone(),
+                record.getInsuranceProvider(),
+                record.getInsurancePolicyNumber(),
+                emergencyContactName,
+                emergencyContactPhone,
+                allergies,
+                List.of()
+        );
+    }
+
+    private StudentMedicalAllergyDTO toAllergyDto(StudentMedicalAllergy allergy) {
+        return new StudentMedicalAllergyDTO(
+                allergy.getId(),
+                allergy.getAllergyName(),
+                allergy.getSeverity() == null ? null : allergy.getSeverity().name(),
+                allergy.getReactionDetails()
+        );
+    }
+
+    private AllergySeverity parseSeverity(String severity) {
+        if (!StringUtils.hasText(severity)) {
+            return null;
+        }
+        try {
+            return AllergySeverity.valueOf(severity.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new EdusyncException("Invalid allergy severity: " + severity, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private GuardianProfileDTO toGuardianProfileDto(StudentGuardianRelationship relation) {
+        Guardian guardian = relation.getGuardian();
+        GuardianProfileDTO dto = new GuardianProfileDTO();
+        dto.setGuardianUuid(guardian.getUuid());
+        dto.setName(fullName(guardian.getUserProfile().getFirstName(), guardian.getUserProfile().getLastName()));
+        dto.setRelation(relation.getRelationshipType());
+        dto.setProfileUrl(guardian.getUserProfile().getProfileUrl());
+        dto.setOccupation(guardian.getOccupation());
+        dto.setEmployer(guardian.getEmployer());
+        dto.setLinkedStudents(List.of());
+        return dto;
+    }
+
+    private String fullName(String firstName, String lastName) {
+        return (safe(firstName) + " " + safe(lastName)).trim();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private String buildObjectKey(User user, String fileName) {

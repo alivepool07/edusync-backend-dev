@@ -20,8 +20,8 @@ import java.util.Set;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(callSuper = true, exclude = {"academicClass", "schedules", "constraints", "students"}) // Exclude relationships
-@ToString(callSuper = true, exclude = {"academicClass", "schedules", "constraints", "students"}) // Exclude lazy relationships
+@EqualsAndHashCode(callSuper = true, exclude = {"academicClass", "schedules", "academicConstraints", "students"}) // Exclude relationships
+@ToString(callSuper = true, exclude = {"academicClass", "schedules", "academicConstraints", "students"}) // Exclude lazy relationships
 @Entity
 @Table(name = "sections")
 public class Section extends AuditableEntity {

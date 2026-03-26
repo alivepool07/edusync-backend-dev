@@ -1,7 +1,6 @@
 package com.project.edusync.iam.model.dto.auth;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record LoginRequest(
@@ -12,5 +11,7 @@ public record LoginRequest(
         @NotBlank(message = "Password is required.")
         String password,
 
-        Boolean rememberMe
+        Boolean rememberMe,
+
+        Long academicYearId
 ) {}

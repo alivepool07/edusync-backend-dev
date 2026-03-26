@@ -18,6 +18,7 @@ public record MeResponse(
         String firstName,
         String lastName,
         String preferredName,
+        String profileUrl,
         LocalDate dateOfBirth,
         Gender gender,
 

@@ -20,4 +20,7 @@ public class SubjectRequestDto {
 
     @Size(max = 100)
     private String requiresSpecialRoomType; // e.g., "LAB", "MUSIC_ROOM"
+
+    @Size(max = 50)
+    private String color;
 }

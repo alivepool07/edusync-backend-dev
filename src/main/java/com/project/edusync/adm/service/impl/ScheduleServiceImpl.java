@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -75,7 +76,11 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     @Override
-    @CacheEvict(value = "sectionSchedules", key = "#requestDto.sectionId")
+    @Caching(evict = {
+            @CacheEvict(value = "sectionSchedules", key = "#requestDto.sectionId"),
+            @CacheEvict(value = "editorContext", key = "#requestDto.sectionId"),
+            @CacheEvict(value = "availableTeachers", allEntries = true)
+    })
     public ScheduleResponseDto addSchedule(ScheduleRequestDto requestDto) {
         log.info("Attempting to create a new schedule entry for section {} at timeslot {}",
                 requestDto.getSectionId(), requestDto.getTimeslotId());
@@ -130,6 +135,9 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         evictSectionScheduleCache(previousSectionId);
         evictSectionScheduleCache(updatedSchedule.getSection().getUuid());
+        evictEditorContextCache(previousSectionId);
+        evictEditorContextCache(updatedSchedule.getSection().getUuid());
+        evictAvailableTeachersCache();
 
         return toScheduleResponseDto(updatedSchedule);
     }
@@ -146,12 +154,17 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         scheduleRepository.softDeleteById(scheduleId);
         evictSectionScheduleCache(schedule.getSection().getUuid());
+        evictEditorContextCache(schedule.getSection().getUuid());
+        evictAvailableTeachersCache();
         log.info("Schedule entry {} marked as inactive successfully", scheduleId);
     }
 
     @Override
     @Transactional
-    @CacheEvict(value = "sectionSchedules", key = "#sectionId")
+    @Caching(evict = {
+            @CacheEvict(value = "sectionSchedules", key = "#sectionId"),
+            @CacheEvict(value = "editorContext", key = "#sectionId")
+    })
     public void saveAsDraft(UUID sectionId, String statusType) {
         log.info("Attemting to save all the schedules with section id {} as draft", sectionId);
         if (!"draft".equalsIgnoreCase(statusType) && !"publish".equalsIgnoreCase(statusType)) {
@@ -175,7 +188,11 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "sectionSchedules", key = "#sectionId")
+    @Caching(evict = {
+            @CacheEvict(value = "sectionSchedules", key = "#sectionId"),
+            @CacheEvict(value = "editorContext", key = "#sectionId"),
+            @CacheEvict(value = "availableTeachers", allEntries = true)
+    })
     public List<ScheduleResponseDto> replaceSectionScheduleBulk(UUID sectionId, List<ScheduleRequestDto> schedules) {
         log.info("Attempting bulk schedule replace for sectionId={} payloadSize={}", sectionId, schedules == null ? 0 : schedules.size());
 
@@ -269,6 +286,26 @@ public class ScheduleServiceImpl implements ScheduleService {
         Cache cache = cacheManager.getCache("sectionSchedules");
         if (cache != null) {
             cache.evict(sectionId);
+        }
+    }
+
+    private void evictEditorContextCache(UUID sectionId) {
+        if (sectionId == null || cacheManager == null) {
+            return;
+        }
+        Cache cache = cacheManager.getCache("editorContext");
+        if (cache != null) {
+            cache.evict(sectionId);
+        }
+    }
+
+    private void evictAvailableTeachersCache() {
+        if (cacheManager == null) {
+            return;
+        }
+        Cache cache = cacheManager.getCache("availableTeachers");
+        if (cache != null) {
+            cache.clear();
         }
     }
 

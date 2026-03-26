@@ -20,8 +20,8 @@ import java.util.Set;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(callSuper = true) // Includes inherited 'id' and 'uuid'
-@ToString(callSuper = true, exclude = {"sections"}) // Exclude lazy relationships
+@EqualsAndHashCode(callSuper = true, exclude = {"sections", "curriculumMaps"}) // Exclude lazy relationships
+@ToString(callSuper = true, exclude = {"sections", "curriculumMaps"}) // Exclude lazy relationships
 @Entity
 @Table(name = "classes") // Maps this entity to the "classes" table
 public class AcademicClass extends AuditableEntity {
@@ -41,5 +41,8 @@ public class AcademicClass extends AuditableEntity {
      */
     @OneToMany(mappedBy = "academicClass", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private Set<Section> sections = new HashSet<>();
+
+    @OneToMany(mappedBy = "academicClass", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private Set<CurriculumMap> curriculumMaps = new HashSet<>();
 
 }

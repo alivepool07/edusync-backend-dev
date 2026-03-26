@@ -49,4 +49,24 @@ public interface StudentDailyAttendanceRepository extends JpaRepository<StudentD
     List<StudentDailyAttendance> findAttendanceByStudentIdsAndDate(
             @Param("studentIds") List<Long> studentIds,
             @Param("attendanceDate") LocalDate attendanceDate);
+
+    /**
+     * Counts the number of attendance records for a student.
+     * @param studentId The logical ID of the student (UIS FK).
+     * @return The count of attendance records.
+     */
+    long countByStudentId(Long studentId);
+
+    /**
+     * Counts the number of present marks for a student.
+     * @param studentId The logical ID of the student (UIS FK).
+     * @return The count of present marks.
+     */
+    @Query("""
+            SELECT COUNT(sda)
+            FROM StudentDailyAttendance sda
+            WHERE sda.studentId = :studentId
+              AND sda.attendanceType.isPresentMark = true
+            """)
+    long countPresentByStudentId(@Param("studentId") Long studentId);
 }

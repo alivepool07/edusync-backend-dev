@@ -12,4 +12,6 @@ import java.util.UUID;
 public class AvailableSubjectDto {
     private UUID uuid;
     private String name;
+    private String subjectCode;
+    private String color;
 }

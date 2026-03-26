@@ -9,6 +9,8 @@ import com.project.edusync.adm.repository.SubjectRepository;
 import com.project.edusync.adm.service.SubjectService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ public class SubjectServiceImpl implements SubjectService {
     private final SubjectRepository subjectRepository;
 
     @Override
+    @CacheEvict(value = {"allSubjects", "editorContext"}, allEntries = true)
     public SubjectResponseDto addSubject(SubjectRequestDto subjectRequestDto) {
         log.info("Attempting to create a new subject with code: {}", subjectRequestDto.getSubjectCode());
 
@@ -37,6 +40,7 @@ public class SubjectServiceImpl implements SubjectService {
         newSubject.setName(subjectRequestDto.getName());
         newSubject.setSubjectCode(subjectRequestDto.getSubjectCode());
         newSubject.setRequiresSpecialRoomType(subjectRequestDto.getRequiresSpecialRoomType());
+        newSubject.setColor(subjectRequestDto.getColor());
         newSubject.setIsActive(true); // Explicitly set as active
 
         Subject savedSubject = subjectRepository.save(newSubject);
@@ -46,6 +50,7 @@ public class SubjectServiceImpl implements SubjectService {
     }
 
     @Override
+    @Cacheable(value = "allSubjects", key = "'ALL'")
     public List<SubjectResponseDto> getAllSubjects() {
         log.info("Fetching all active subjects");
         return subjectRepository.findAll().stream()
@@ -67,6 +72,7 @@ public class SubjectServiceImpl implements SubjectService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"allSubjects", "editorContext"}, allEntries = true)
     public SubjectResponseDto updateSubject(UUID subjectId, SubjectRequestDto subjectRequestDto) {
         log.info("Attempting to update subject with id: {}", subjectId);
         Subject existingSubject = subjectRepository.findActiveById(subjectId)
@@ -86,6 +92,7 @@ public class SubjectServiceImpl implements SubjectService {
         existingSubject.setName(subjectRequestDto.getName());
         existingSubject.setSubjectCode(subjectRequestDto.getSubjectCode());
         existingSubject.setRequiresSpecialRoomType(subjectRequestDto.getRequiresSpecialRoomType());
+        existingSubject.setColor(subjectRequestDto.getColor());
 
         Subject updatedSubject = subjectRepository.save(existingSubject);
         log.info("Subject with id {} updated successfully", updatedSubject.getUuid());
@@ -95,6 +102,7 @@ public class SubjectServiceImpl implements SubjectService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"allSubjects", "editorContext"}, allEntries = true)
     public void deleteSubject(UUID subjectId) {
         log.info("Attempting to soft delete subject with id: {}", subjectId);
         if (!subjectRepository.existsActiveById(subjectId)) {
@@ -116,6 +124,7 @@ public class SubjectServiceImpl implements SubjectService {
                 .name(entity.getName())
                 .subjectCode(entity.getSubjectCode())
                 .requiresSpecialRoomType(entity.getRequiresSpecialRoomType())
+                .color(entity.getColor())
                 .build();
     }
 }

@@ -15,5 +15,6 @@ public class SubjectResponseDto {
     private String name;
     private String subjectCode;
     private String requiresSpecialRoomType;
+    private String color;
 
 }

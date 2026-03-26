@@ -14,5 +14,6 @@ public class UserDetailsDto {
     private Long userId;
     private String username;
     private String email;
+    private String profileUrl;
     private Set<String> roles;
 }

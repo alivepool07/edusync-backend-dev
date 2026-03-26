@@ -32,7 +32,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Date;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -75,7 +74,12 @@ public class AuthServiceImpl implements AuthService {
         // 4. Generate tokens, now passing IP
 
         log.info("Generating access token for user");
-        String accessToken = authUtil.generateAccessToken(user.getUsername(), user.getRoles());
+        String accessToken = authUtil.generateAccessToken(
+                user.getUsername(),
+                user.getRoles(),
+                user.getId(),
+                loginRequest.academicYearId()
+        );
         String refreshToken = null;
         if(loginRequest.rememberMe()){
             log.info("Generating refresh token");
@@ -86,11 +90,16 @@ public class AuthServiceImpl implements AuthService {
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toSet());
 
+        String profileUrl = userProfileRepository.findByUser(user)
+                .map(UserProfile::getProfileUrl)
+                .orElse(null);
+
         // 5. Prepare user DTO
         UserDetailsDto userDetailsDto = new UserDetailsDto(
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
+                profileUrl,
                 user.getRoles().stream().map(Role::getName).collect(Collectors.toSet())
         );
         boolean isFirstLogin = (user.getLastLoginTimestamp() == null);
@@ -126,7 +135,12 @@ public class AuthServiceImpl implements AuthService {
 
         refreshTokenService.invalidateToken(refreshToken.getToken());
         String newRefreshToken = refreshTokenService.createRefreshToken(user, refreshToken.getIpAddress()).getToken();
-        String newAccessToken = authUtil.generateAccessToken(user.getUsername(), user.getRoles());
+        String newAccessToken = authUtil.generateAccessToken(
+                user.getUsername(),
+                user.getRoles(),
+                user.getId(),
+                refreshTokenRequest.academicYearId()
+        );
 
         return new RefreshTokenResponse(newAccessToken, newRefreshToken);
     }
@@ -212,6 +226,7 @@ public class AuthServiceImpl implements AuthService {
                 userProfile.getFirstName(),
                 userProfile.getLastName(),
                 userProfile.getPreferredName(),
+                userProfile.getProfileUrl(),
                 userProfile.getDateOfBirth(),
                 userProfile.getGender(), //
                 addresses

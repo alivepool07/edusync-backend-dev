@@ -17,6 +17,7 @@ import com.project.edusync.ams.model.service.StudentAttendanceService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +43,7 @@ public class StudentAttendanceServiceImpl implements StudentAttendanceService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"dashboard", "dashboardOverview"}, allEntries = true)
     public List<StudentAttendanceResponseDTO> markAttendanceBatch(List<StudentAttendanceRequestDTO> requests, Long performedByStaffId) {
         if (requests == null || requests.isEmpty()) {
             return Collections.emptyList();
@@ -167,6 +169,7 @@ public class StudentAttendanceServiceImpl implements StudentAttendanceService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"dashboard", "dashboardOverview"}, allEntries = true)
     public StudentAttendanceResponseDTO updateAttendance(Long recordId, StudentAttendanceRequestDTO req, Long performedByStaffId) {
         StudentDailyAttendance existing = studentRepo.findById(recordId)
                 .orElseThrow(() -> new AttendanceRecordNotFoundException("Attendance record not found with id: " + recordId));
@@ -192,6 +195,7 @@ public class StudentAttendanceServiceImpl implements StudentAttendanceService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"dashboard", "dashboardOverview"}, allEntries = true)
     public void deleteAttendance(Long recordId, Long performedByStaffId) {
         StudentDailyAttendance existing = studentRepo.findById(recordId)
                 .orElseThrow(() -> new AttendanceRecordNotFoundException("Attendance record not found with id: " + recordId));

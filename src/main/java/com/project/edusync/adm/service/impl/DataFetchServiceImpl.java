@@ -3,16 +3,18 @@ package com.project.edusync.adm.service.impl;
 import com.project.edusync.adm.model.dto.response.AvailableRoomDto;
 import com.project.edusync.adm.model.dto.response.AvailableSubjectDto;
 import com.project.edusync.adm.model.dto.response.AvailableTeacherDto;
-import com.project.edusync.adm.model.entity.AcademicConstraint;
+import com.project.edusync.adm.model.entity.CurriculumMap;
 import com.project.edusync.adm.model.entity.Room;
 import com.project.edusync.adm.model.entity.Section;
 import com.project.edusync.adm.model.entity.Subject;
+import com.project.edusync.adm.repository.CurriculumMapRepository;
 import com.project.edusync.adm.repository.RoomRepository;
 import com.project.edusync.adm.repository.SectionRepository;
 import com.project.edusync.adm.service.DataFetchService;
 import com.project.edusync.uis.model.entity.details.TeacherDetails; // Assumed path
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,8 +31,10 @@ public class DataFetchServiceImpl implements DataFetchService {
     private final com.project.edusync.uis.repository.details.TeacherDetailsRepository teacherDetailsRepository;
     private final RoomRepository roomRepository;
     private final SectionRepository sectionRepository;
+    private final CurriculumMapRepository curriculumMapRepository;
 
     @Override
+    @Cacheable(value = "availableTeachers", key = "#subjectId")
     public List<AvailableTeacherDto> getAvailableTeachers(UUID subjectId) {
         log.info("Fetching qualified teachers for subject {} based on schedule history", subjectId);
 
@@ -59,6 +63,7 @@ public class DataFetchServiceImpl implements DataFetchService {
     }
 
     @Override
+    @Cacheable(value = "availableSubjects", key = "#sectionId")
     public List<AvailableSubjectDto> getAvailableSubjects(UUID sectionId) {
         log.info("Fetching available subjects for section {}", sectionId);
         Section section = sectionRepository.findById(sectionId)
@@ -67,13 +72,12 @@ public class DataFetchServiceImpl implements DataFetchService {
                     return new RuntimeException("No section resource found with id: " + sectionId);
                 });
 
-        // NOTE: This part still uses AcademicConstraint.
-        // If you also want to change this, you'll need to define a new business logic,
-        // as this is the only link between a Section and its Subjects.
-        return section.getAcademicConstraints().stream()
-                .map(AcademicConstraint::getSubject)
-                .filter(subject -> subject != null && subject.getIsActive()) // Added null check
-                .distinct() // Ensure unique subjects
+        List<CurriculumMap> curriculumMaps = curriculumMapRepository.findActiveByClassUuid(section.getAcademicClass().getUuid());
+
+        return curriculumMaps.stream()
+                .map(CurriculumMap::getSubject)
+                .filter(subject -> subject != null && Boolean.TRUE.equals(subject.getIsActive()))
+                .distinct()
                 .map(this::toAvailableSubjectDto)
                 .collect(Collectors.toList());
     }
@@ -98,6 +102,8 @@ public class DataFetchServiceImpl implements DataFetchService {
         return AvailableSubjectDto.builder()
                 .uuid(entity.getUuid())
                 .name(entity.getName())
+                .subjectCode(entity.getSubjectCode())
+                .color(entity.getColor())
                 .build();
     }
 }

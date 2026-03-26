@@ -10,7 +10,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -54,11 +54,24 @@ public class User extends AuditableEntity implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        // Map your Set<Role> to a Collection<SimpleGrantedAuthority>
-        // Spring Security expects roles in the format "ROLE_ADMIN", "ROLE_USER" etc.
-        // We will get the role name from our Role entity.
-        return roles.stream()
-                .map(role -> new SimpleGrantedAuthority(role.getName()))
+        Set<String> authorities = new LinkedHashSet<>();
+
+        // Keep role authorities for backward compatibility.
+        roles.stream()
+                .map(Role::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .forEach(authorities::add);
+
+        // Add permission authorities used by fine-grained @PreAuthorize checks.
+        roles.stream()
+                .filter(role -> role.getPermissions() != null)
+                .flatMap(role -> role.getPermissions().stream())
+                .map(Permission::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .forEach(authorities::add);
+
+        return authorities.stream()
+                .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());
     }
 

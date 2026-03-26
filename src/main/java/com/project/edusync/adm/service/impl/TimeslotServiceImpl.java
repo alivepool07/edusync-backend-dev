@@ -9,6 +9,8 @@ import com.project.edusync.adm.repository.TimeslotRepository;
 import com.project.edusync.adm.service.TimeslotService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ public class TimeslotServiceImpl implements TimeslotService {
     private final TimeslotRepository timeslotRepository;
 
     @Override
+    @CacheEvict(value = {"allTimeslots", "editorContext"}, allEntries = true)
     public TimeslotResponseDto addTimeslot(TimeslotRequestDto timeslotRequestDto) {
         log.info("Attempting to create a new timeslot for day {} at {}",
                 timeslotRequestDto.getDayOfWeek(), timeslotRequestDto.getStartTime());
@@ -47,6 +50,7 @@ public class TimeslotServiceImpl implements TimeslotService {
     }
 
     @Override
+    @Cacheable(value = "allTimeslots", key = "#dayOfWeek == null ? 'ALL' : #dayOfWeek")
     public List<TimeslotResponseDto> getAllTimeslots(Short dayOfWeek) {
         List<Timeslot> timeslots;
         if (dayOfWeek != null) {
@@ -75,6 +79,7 @@ public class TimeslotServiceImpl implements TimeslotService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"allTimeslots", "editorContext"}, allEntries = true)
     public TimeslotResponseDto updateTimeslot(UUID timeslotId, TimeslotRequestDto timeslotRequestDto) {
         log.info("Attempting to update timeslot with id: {}", timeslotId);
         Timeslot existingTimeslot = timeslotRepository.findActiveById(timeslotId)
@@ -100,6 +105,7 @@ public class TimeslotServiceImpl implements TimeslotService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"allTimeslots", "editorContext"}, allEntries = true)
     public void deleteTimeslot(UUID timeslotId) {
         log.info("Attempting to soft delete timeslot with id: {}", timeslotId);
         if (!timeslotRepository.existsActiveById(timeslotId)) {

@@ -10,8 +10,8 @@ import java.util.Set;
 @Entity
 @Getter
 @Setter
-@EqualsAndHashCode(callSuper = true, exclude = {"constraints", "schedules"}) // Use inherited fields, exclude relationships
-@ToString(callSuper = true, exclude = {"constraints", "schedules"}) // Use inherited fields, exclude relationships
+@EqualsAndHashCode(callSuper = true, exclude = {"academicConstraints", "schedules", "curriculumMaps"}) // Use inherited fields, exclude relationships
+@ToString(callSuper = true, exclude = {"academicConstraints", "schedules", "curriculumMaps"}) // Use inherited fields, exclude relationships
 @NoArgsConstructor
 public class Subject extends AuditableEntity {
 
@@ -23,6 +23,9 @@ public class Subject extends AuditableEntity {
 
     @Column(name = "requires_special_room_type", length = 100)
     private String requiresSpecialRoomType;
+
+    @Column(name = "color", length = 50)
+    private String color;
 
     @Column(name = "is_active")
     private Boolean isActive = true;
@@ -44,4 +47,7 @@ public class Subject extends AuditableEntity {
      */
     @OneToMany(mappedBy = "subject", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private Set<Schedule> schedules = new HashSet<>();
+
+    @OneToMany(mappedBy = "subject", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private Set<CurriculumMap> curriculumMaps = new HashSet<>();
 }

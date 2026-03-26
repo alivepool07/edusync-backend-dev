@@ -1,5 +1,7 @@
 package com.project.edusync.adm.model.dto.response;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Builder;
 import lombok.Data;
 
@@ -42,6 +44,7 @@ public class ScheduleResponseDto {
     @Data
     @Builder
     public static class NestedTeacherResponseDto {
+        @JsonSerialize(using = ToStringSerializer.class)
         private Long id;
         private String name; // Assuming TeacherDetails has a name
     }

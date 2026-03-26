@@ -19,7 +19,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -81,6 +83,12 @@ public class JWTFilter extends OncePerRequestFilter {
                     null,      // Credentials (N/A for JWT)
                     authorities // Authorities (from the token)
             );
+
+            // Claims are passed as authentication details so AuthUtil can safely access them later.
+            Map<String, Object> details = new HashMap<>();
+            details.put("user_id", authUtil.getClaimValueFromToken(token, "user_id"));
+            details.put("academic_year_id", authUtil.getClaimValueFromToken(token, "academic_year_id"));
+            authToken.setDetails(details);
 
             // 5. Set the Authentication in SecurityContextHolder
             SecurityContextHolder.getContext().setAuthentication(authToken);

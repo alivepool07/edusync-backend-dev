@@ -2,16 +2,28 @@ package com.project.edusync.uis.controller;
 
 import com.project.edusync.common.security.AuthUtil;
 import com.project.edusync.uis.model.dto.profile.ComprehensiveUserProfileResponseDTO;
+import com.project.edusync.uis.model.dto.profile.AddressDTO;
+import com.project.edusync.uis.model.dto.profile.GuardianProfileDTO;
+import com.project.edusync.uis.model.dto.profile.ProfileImageUploadCompleteRequestDTO;
+import com.project.edusync.uis.model.dto.profile.ProfileImageUploadInitRequestDTO;
+import com.project.edusync.uis.model.dto.profile.ProfileImageUploadInitResponseDTO;
+import com.project.edusync.uis.model.dto.profile.StudentMedicalAllergyDTO;
+import com.project.edusync.uis.model.dto.profile.StudentMedicalRecordDTO;
 import com.project.edusync.uis.model.dto.profile.UserProfileDTO;
 import com.project.edusync.uis.model.dto.profile.UserProfileUpdateDTO;
 import com.project.edusync.uis.service.ProfileService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * REST Controller for managing User Profiles.
@@ -24,6 +36,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("${api.url}/profile")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "User Profile Management", description = "Endpoints for viewing and updating user profiles")
 public class ProfileController {
 
@@ -70,6 +83,120 @@ public class ProfileController {
         Long currentUserId = authUtil.getCurrentUserId();
         UserProfileDTO updatedProfile = profileService.updateProfileByUserId(currentUserId, updateDto);
         return ResponseEntity.ok(updatedProfile);
+    }
+
+    @PostMapping("/me/image/upload-init")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Initialize Profile Image Upload", description = "Creates secure provider-specific upload instructions for the current user's profile image.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Upload instructions created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid upload request payload"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden")
+    })
+    public ResponseEntity<ProfileImageUploadInitResponseDTO> initMyProfileImageUpload(
+            @Valid @RequestBody ProfileImageUploadInitRequestDTO request) {
+
+        Long currentUserId = authUtil.getCurrentUserId();
+        log.info("Profile image upload-init requested for userId={} fileName={} contentType={} sizeBytes={}",
+                currentUserId, request.getFileName(), request.getContentType(), request.getSizeBytes());
+
+        ProfileImageUploadInitResponseDTO response = profileService.initiateProfileImageUpload(currentUserId, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/me/image/upload-complete")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Complete Profile Image Upload", description = "Finalizes profile image upload and stores the secure URL for the current user's profile.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Profile image saved successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid completion payload"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized"),
+            @ApiResponse(responseCode = "403", description = "Forbidden")
+    })
+    public ResponseEntity<UserProfileDTO> completeMyProfileImageUpload(
+            @Valid @RequestBody ProfileImageUploadCompleteRequestDTO request) {
+
+        Long currentUserId = authUtil.getCurrentUserId();
+        log.info("Profile image upload-complete requested for userId={} objectKey={}",
+                currentUserId, request.getObjectKey());
+
+        UserProfileDTO updatedProfile = profileService.completeProfileImageUpload(currentUserId, request);
+        return ResponseEntity.ok(updatedProfile);
+    }
+
+    @PostMapping("/me/addresses")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Add My Address", description = "Adds a new address for the authenticated user profile.")
+    public ResponseEntity<AddressDTO> addMyAddress(@Valid @RequestBody AddressDTO request) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.addMyAddress(currentUserId, request));
+    }
+
+    @PutMapping("/me/addresses/{id}")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Update My Address", description = "Updates an existing address owned by the authenticated user.")
+    public ResponseEntity<AddressDTO> updateMyAddress(@PathVariable Long id, @Valid @RequestBody AddressDTO request) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.updateMyAddress(currentUserId, id, request));
+    }
+
+    @DeleteMapping("/me/addresses/{id}")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Delete My Address", description = "Deletes an existing address owned by the authenticated user.")
+    public ResponseEntity<Void> deleteMyAddress(@PathVariable Long id) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        profileService.deleteMyAddress(currentUserId, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/me/medical")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Update My Medical Record", description = "Updates medical contacts and insurance details for the authenticated student.")
+    public ResponseEntity<StudentMedicalRecordDTO> updateMyMedicalRecord(@Valid @RequestBody StudentMedicalRecordDTO request) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.updateMyMedicalRecord(currentUserId, request));
+    }
+
+    @GetMapping("/me/medical")
+    @PreAuthorize("hasAuthority('profile:read:own')")
+    @Operation(summary = "Get My Medical Record", description = "Returns the authenticated student's medical record.")
+    public ResponseEntity<StudentMedicalRecordDTO> getMyMedicalRecord() {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.getMyMedicalRecord(currentUserId));
+    }
+
+    @PostMapping("/me/medical")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Create My Medical Record", description = "Creates the authenticated student's medical record once. Duplicate creation is blocked.")
+    public ResponseEntity<StudentMedicalRecordDTO> createMyMedicalRecord(@Valid @RequestBody StudentMedicalRecordDTO request) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.createMyMedicalRecord(currentUserId, request));
+    }
+
+    @PostMapping("/me/medical/allergies")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Add My Allergy", description = "Adds an allergy to the authenticated student's medical record.")
+    public ResponseEntity<StudentMedicalAllergyDTO> addMyMedicalAllergy(@Valid @RequestBody StudentMedicalAllergyDTO request) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.addMyMedicalAllergy(currentUserId, request));
+    }
+
+    @DeleteMapping("/me/medical/allergies/{id}")
+    @PreAuthorize("hasAuthority('profile:update:own')")
+    @Operation(summary = "Delete My Allergy", description = "Deletes an allergy from the authenticated student's medical record.")
+    public ResponseEntity<Void> deleteMyMedicalAllergy(@PathVariable Long id) {
+        Long currentUserId = authUtil.getCurrentUserId();
+        profileService.deleteMyMedicalAllergy(currentUserId, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/me/guardians")
+    @PreAuthorize("hasAuthority('profile:read:own')")
+    @Operation(summary = "Get My Guardians", description = "Returns guardians linked to the authenticated student. View-only access.")
+    public ResponseEntity<List<GuardianProfileDTO>> getMyGuardians() {
+        Long currentUserId = authUtil.getCurrentUserId();
+        return ResponseEntity.ok(profileService.getMyGuardians(currentUserId));
     }
 
     // =================================================================================

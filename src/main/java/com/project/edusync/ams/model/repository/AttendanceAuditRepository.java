@@ -32,4 +32,11 @@ public interface AttendanceAuditRepository extends JpaRepository<AttendanceAudit
     Page<AttendanceAudit> findByActionTypeOrderByCreatedAtDesc(
             ActionType actionType,
             Pageable pageable);
+
+    /**
+     * Retrieves the recent activity for a specific student, useful for dashboard feed rendering.
+     */
+    List<AttendanceAudit> findByDailyAttendance_StudentIdOrderByCreatedAtDesc(
+            Long studentId,
+            Pageable pageable);
 }

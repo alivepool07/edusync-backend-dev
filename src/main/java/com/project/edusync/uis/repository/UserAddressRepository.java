@@ -12,5 +12,7 @@ public interface UserAddressRepository extends JpaRepository<UserAddress,Long> {
 
     List<UserAddress> findByUserProfile(UserProfile profile);
 
+    Optional<UserAddress> findByAddress_IdAndUserProfile_Id(Long addressId, Long profileId);
+
     void deleteByUserProfile(UserProfile userProfile);
 }

@@ -4,6 +4,16 @@
 spring:
   application:
     name: edusync
+  cache:
+    type: redis
+    redis:
+      time-to-live: 60s
+      cache-null-values: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
   profiles:
     active: dev
   mail:
@@ -73,6 +83,19 @@ app:
 api:
   url: ${BASE_URL}${API_VERSION}
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      financeDashboard:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 60
+        slow-call-duration-threshold: 300ms
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+
 ---
 # ===================================================================
 # DEVELOPMENT PROFILE (Active when spring.profiles.active=dev)
@@ -90,6 +113,12 @@ spring:
     type: com.zaxxer.hikari.HikariDataSource
     hikari:
       connection-timeout: 30000
+      maximum-pool-size: 40
+      minimum-idle: 10
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      keepalive-time: 30000
+      auto-commit: false
 
   jpa:
     # Allowed only in dev: auto-syncs entity changes to the DB schema.
@@ -115,8 +144,12 @@ spring:
     type: com.zaxxer.hikari.HikariDataSource
     hikari:
       connection-timeout: 30000
-      maximum-pool-size: 20
-      minimum-idle: 5
+      maximum-pool-size: 60
+      minimum-idle: 20
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      keepalive-time: 30000
+      auto-commit: false
 
   jpa:
     # SECURITY: 'validate' ensures schema matches entities without altering it.

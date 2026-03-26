@@ -57,4 +57,6 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
     Page<Student> searchStudents(@Param("query") String query, @Param("active") Boolean active, Pageable pageable);
 
     Optional<Student> findByUuid(java.util.UUID uuid);
+
+    Optional<Student> findByUserProfile_User_Id(Long userId);
 }

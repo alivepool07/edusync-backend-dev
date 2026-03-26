@@ -94,4 +94,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
             "WHERE (i.status = 'PENDING' OR i.status = 'OVERDUE') " +
             "AND i.student.id = :studentId")
     Optional<LocalDate> findNextDueDateForStudent(@Param("studentId") Long studentId);
+
+    @Query("SELECT COALESCE(SUM(i.totalAmount - i.paidAmount), 0) " +
+            "FROM Invoice i " +
+            "WHERE i.status = 'OVERDUE' " +
+            "AND i.student.id = :studentId")
+    BigDecimal findTotalOverdueForStudent(@Param("studentId") Long studentId);
 }

@@ -36,6 +36,22 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
         LocalDateTime getLastUpdatedAt();
     }
 
+    interface TeacherSubjectPairProjection {
+        Long getTeacherId();
+
+        String getFirstName();
+
+        String getLastName();
+
+        UUID getSubjectUuid();
+    }
+
+    interface SubjectScheduledPeriodsProjection {
+        UUID getSubjectId();
+
+        Long getScheduledPeriods();
+    }
+
     @Query("SELECT s FROM Schedule s WHERE s.uuid = :scheduleId AND s.isActive = true")
     Optional<Schedule> findActiveById(UUID scheduleId);
 
@@ -54,6 +70,44 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
 
     @Query("SELECT s FROM Schedule s WHERE s.section.uuid = :sectionId AND s.isActive = true")
     List<Schedule> findAllActiveBySectionUuid(UUID sectionId);
+
+    @Query("""
+            SELECT s.subject.uuid as subjectId,
+                   COUNT(s.id) as scheduledPeriods
+            FROM Schedule s
+            WHERE s.isActive = true
+              AND s.section.academicClass.uuid = :classId
+              AND s.subject.uuid IN :subjectIds
+            GROUP BY s.subject.uuid
+            """)
+    List<SubjectScheduledPeriodsProjection> findScheduledPeriodsByClassAndSubjectIds(UUID classId, List<UUID> subjectIds);
+
+    @Query("""
+            SELECT s FROM Schedule s
+            JOIN FETCH s.subject sub
+            JOIN FETCH s.teacher td
+            JOIN FETCH s.room room
+            JOIN FETCH s.timeslot ts
+            WHERE s.section.uuid = :sectionId
+              AND s.isActive = true
+            """)
+    List<Schedule> findAllActiveWithReferencesBySectionUuid(UUID sectionId);
+
+    @Query("""
+            SELECT td.id as teacherId,
+                   up.firstName as firstName,
+                   up.lastName as lastName,
+                   sub.uuid as subjectUuid
+            FROM Schedule s
+            JOIN s.teacher td
+            JOIN td.staff st
+            JOIN st.userProfile up
+            JOIN s.subject sub
+            WHERE s.isActive = true
+            GROUP BY td.id, up.firstName, up.lastName, sub.uuid
+            ORDER BY up.firstName ASC, up.lastName ASC
+            """)
+    List<TeacherSubjectPairProjection> findTeacherSubjectPairs();
 
     @Query("""
             SELECT ac.uuid as classId,

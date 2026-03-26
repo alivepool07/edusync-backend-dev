@@ -1,6 +1,7 @@
 package com.project.edusync.common.security;
 
 import com.project.edusync.common.exception.iam.InsufficientAuthenticationException;
+import com.project.edusync.iam.model.entity.Permission;
 import com.project.edusync.iam.model.entity.Role;
 import com.project.edusync.iam.model.entity.User;
 import io.jsonwebtoken.Claims;
@@ -25,8 +26,10 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -84,6 +87,43 @@ public class AuthUtil {
         return getCurrentUser().getId();
     }
 
+    /**
+     * Retrieves the academic year ID from Authentication details injected by JWTFilter.
+     * Returns null when the token/context does not carry this claim.
+     */
+    public Long getCurrentAcademicYearId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new InsufficientAuthenticationException("User is not authenticated.");
+        }
+
+        Object details = authentication.getDetails();
+        if (!(details instanceof Map<?, ?> detailsMap)) {
+            return null;
+        }
+
+        Object academicYearId = detailsMap.get("academic_year_id");
+        if (academicYearId == null) {
+            return null;
+        }
+
+        if (academicYearId instanceof Number number) {
+            return number.longValue();
+        }
+
+        String raw = Objects.toString(academicYearId, null);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException ex) {
+            log.warn("Invalid academic_year_id in auth context: {}", raw);
+            return null;
+        }
+    }
+
     @Value("${app.jwt.secret-key}")
     private String secretKey;
 
@@ -113,17 +153,37 @@ public class AuthUtil {
      * @return A signed JWT Access Token.
      */
     public String generateAccessToken(String username, Set<Role> roles) {
+        return generateAccessToken(username, roles, null, null);
+    }
+
+    /**
+     * Generates a short-lived Access Token containing authorities and context claims.
+     */
+    public String generateAccessToken(String username, Set<Role> roles, Long userId, Long academicYearId) {
         log.debug("Generating Access Token for user: {}", username);
 
-        // 1. Convert roles to a simple List<String> for the claim
-        List<String> authorityStrings = roles.stream()
-                .map(Role::getName) // Assuming Role has a getName() or similar
-                .collect(Collectors.toList());
+        // Include role + permission authorities so method-level checks can use either.
+        Set<String> authoritySet = new LinkedHashSet<>();
+        roles.stream()
+                .map(Role::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .forEach(authoritySet::add);
+
+        roles.stream()
+                .filter(role -> role.getPermissions() != null)
+                .flatMap(role -> role.getPermissions().stream())
+                .map(Permission::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .forEach(authoritySet::add);
+
+        List<String> authorityStrings = authoritySet.stream().toList();
         log.debug("Included {} authorities in access token for user: {}", authorityStrings.size(), username);
 
         // 2. Create a 'claims' map to store the authorities
         Map<String, Object> claims = new HashMap<>();
         claims.put("authorities", authorityStrings);
+        claims.put("user_id", userId);
+        claims.put("academic_year_id", academicYearId);
 
         // 3. Build the token
         String token = Jwts.builder()
@@ -179,6 +239,13 @@ public class AuthUtil {
         return authorities.stream()
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Reads a claim value from a signed JWT token.
+     */
+    public Object getClaimValueFromToken(String token, String claimName) {
+        return getAllClaimsFromToken(token).get(claimName);
     }
 
     /**

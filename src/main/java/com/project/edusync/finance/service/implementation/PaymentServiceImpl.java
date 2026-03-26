@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"dashboard", "dashboardOverview"}, allEntries = true)
     public PaymentResponseDTO recordOfflinePayment(RecordOfflinePaymentDTO createDTO) {
 
         // 1. Find the related entities
@@ -199,6 +201,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
+    @CacheEvict(value = {"dashboard", "dashboardOverview"}, allEntries = true)
     public PaymentResponseDTO verifyOnlinePayment(VerifyPaymentRequestDTO verifyDTO) throws Exception {
         log.info("Verifying payment for Razorpay Order ID: {}", verifyDTO.getOrderId());
 
@@ -250,3 +253,4 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
 }
+
