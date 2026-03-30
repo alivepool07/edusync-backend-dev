@@ -2,6 +2,9 @@ package com.project.edusync.common.config;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.Cache;
+import org.springframework.cache.interceptor.CacheErrorHandler;
+import org.springframework.cache.interceptor.SimpleCacheErrorHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +25,7 @@ import java.time.Duration;
 @Slf4j
 public class CacheConfig {
 
-    @Value("${app.cache.version:v1}")
+    @Value("${app.cache.version:v2}")
     private String cacheVersion;
 
     @Bean
@@ -48,6 +51,29 @@ public class CacheConfig {
                 .serializeValuesWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(serializer)
                 );
+    }
+
+    @Bean
+    public CacheErrorHandler cacheErrorHandler() {
+        return new SimpleCacheErrorHandler() {
+            @Override
+            public void handleCacheGetError(RuntimeException exception, Cache cache, Object key) {
+                log.warn("Cache get failed for cache='{}' key='{}'. Evicting key and continuing without cache. Cause: {}",
+                        cache.getName(), key, exception.getMessage());
+                try {
+                    cache.evict(key);
+                } catch (RuntimeException evictException) {
+                    log.warn("Cache evict after get failure also failed for cache='{}' key='{}'. Cause: {}",
+                            cache.getName(), key, evictException.getMessage());
+                }
+            }
+
+            @Override
+            public void handleCachePutError(RuntimeException exception, Cache cache, Object key, Object value) {
+                log.warn("Cache put failed for cache='{}' key='{}'. Continuing without cache write. Cause: {}",
+                        cache.getName(), key, exception.getMessage());
+            }
+        };
     }
 }
 
