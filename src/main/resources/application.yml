@@ -29,6 +29,10 @@ spring:
             enable: true
     from: ${MAIL_FROM:no-reply@shikshaintelligence.com}
 
+jasypt:
+  encryptor:
+    password: ${JASYPT_ENCRYPTOR_PASSWORD:${APP_SETTINGS_ENCRYPTION_KEY:}}
+
   # --- JPA / Hibernate Common Settings ---
   jpa:
     hibernate:
@@ -85,6 +89,32 @@ app:
 api:
   url: ${BASE_URL}${API_VERSION}
 
+logging:
+  # Log file path — read by logback-spring.xml via <springProperty source="logging.file.name"/>
+  # Also used by the SuperAdmin /api/v1/super/logs tail endpoint.
+  file:
+    name: ${LOG_FILE_NAME:logs/edusync-dev.log}
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health, info, metrics, loggers, httpexchanges, scheduledtasks
+  endpoint:
+    health:
+      show-details: always
+    httpexchanges:
+      enabled: true
+  httpexchanges:
+    recording:
+      enabled: true
+  info:
+    git:
+      mode: full
+    build:
+      enabled: true
+
 resilience4j:
   circuitbreaker:
     instances:
@@ -126,8 +156,13 @@ spring:
     # Allowed only in dev: auto-syncs entity changes to the DB schema.
     hibernate:
       ddl-auto: update
-    # Enabled only in dev for debugging SQL queries.
-    show-sql: true
+    # IMPORTANT: keep show-sql: false even in dev.
+    # show-sql=true writes Hibernate SQL via System.out.println() which
+    # bypasses Logback entirely, appending raw bytes to existing log lines
+    # without newlines — this is what caused the garbled log output.
+    # SQL logging is handled correctly via logback-spring.xml:
+    #   <logger name="org.hibernate.SQL" level="DEBUG"/>
+    show-sql: false
 
 ---
 # ===================================================================
@@ -145,21 +180,44 @@ spring:
     password: ${DB_PASS}
     type: com.zaxxer.hikari.HikariDataSource
     hikari:
-      connection-timeout: 30000
-      maximum-pool-size: 60
-      minimum-idle: 20
+      connection-timeout: 3000
+      maximum-pool-size: 20
+      minimum-idle: 5
       idle-timeout: 300000
       max-lifetime: 1800000
       keepalive-time: 30000
       auto-commit: false
+
+  task:
+    execution:
+      pool:
+        core-size: 10
+        max-size: 50
+        queue-capacity: 500
 
   jpa:
     # SECURITY: 'validate' ensures schema matches entities without altering it.
     hibernate:
       ddl-auto: validate
     show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
 
 # SECURITY: Enforce HTTPS in production.
 server:
   ssl:
     enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.project.edusync: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+
