@@ -32,6 +32,7 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
     // Repositories for ADM entities
     private final AcademicClassRepository academicClassRepository;
     private final SubjectRepository subjectRepository;
+    private final com.project.edusync.adm.repository.TimeslotRepository timeslotRepository;
 
     @Override
     public ExamScheduleResponseDTO createSchedule(UUID examUuid, ExamScheduleRequestDTO requestDTO) {
@@ -106,8 +107,26 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
                 .orElseThrow(() -> new EdusyncException("ADM-404", "Subject not found", HttpStatus.NOT_FOUND));
         entity.setSubject(subject);
 
+        // --- Timeslot mapping ---
+        // NOTE: Timeslot requires dayOfWeek, startTime, endTime. We use examDate.getDayOfWeek().getValue() for dayOfWeek.
+        java.time.LocalTime startTime = dto.getStartTime();
+        java.time.LocalTime endTime = dto.getEndTime();
+        Short dayOfWeek = dto.getExamDate() != null ? (short) dto.getExamDate().getDayOfWeek().getValue() : null;
+        com.project.edusync.adm.model.entity.Timeslot timeslot = timeslotRepository
+                .findByStartTimeAndEndTime(startTime, endTime)
+                .orElseGet(() -> {
+                    com.project.edusync.adm.model.entity.Timeslot ts = new com.project.edusync.adm.model.entity.Timeslot();
+                    ts.setStartTime(startTime);
+                    ts.setEndTime(endTime);
+                    ts.setDayOfWeek(dayOfWeek);
+                    ts.setIsActive(true);
+                    return timeslotRepository.save(ts);
+                });
+        entity.setTimeslot(timeslot);
+
         entity.setExamDate(dto.getExamDate());
-        entity.setMaxMarks(dto.getMaxMarks().intValue()); // convert if needed
+        entity.setDuration(dto.getDuration());
+        entity.setMaxMarks(dto.getMaxMarks().intValue());
     }
 
     private ExamScheduleResponseDTO mapEntityToResponse(ExamSchedule entity) {
@@ -119,7 +138,11 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
                 .subjectId(entity.getSubject().getUuid())
                 .subjectName(entity.getSubject().getName())
                 .examDate(entity.getExamDate())
-                .maxMarks(java.math.BigDecimal.valueOf(entity.getMaxMarks())) // convert Integer to BigDecimal
+                .startTime(entity.getTimeslot() != null ? entity.getTimeslot().getStartTime() : null)
+                .endTime(entity.getTimeslot() != null ? entity.getTimeslot().getEndTime() : null)
+                .maxMarks(java.math.BigDecimal.valueOf(entity.getMaxMarks()))
+                .passingMarks(java.math.BigDecimal.valueOf(entity.getMaxMarks())) // TODO: replace with actual field if available
+                .roomNumber(null) // TODO: replace with actual field if available
                 .build();
     }
 }

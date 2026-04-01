@@ -77,13 +77,16 @@ public class Room extends AuditableEntity {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
-    @PrePersist
+    // Only @PreUpdate here. Do NOT add @PrePersist to avoid duplicate entity listener error.
     @PreUpdate
     public void calculateCapacity() {
         if (rowCount != null && columnsPerRow != null && seatsPerUnit != null) {
-            this.totalCapacity = rowCount * columnsPerRow * seatsPerUnit;
+            int calculated = rowCount * columnsPerRow * seatsPerUnit;
+            this.totalCapacity = calculated;
+            this.capacity = calculated;
         }
     }
+    // If you want to ensure capacity is set on insert, call calculateCapacity() from the superclass's @PrePersist method.
 
     // --- Relationships ---
 

@@ -16,6 +16,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,12 +45,7 @@ public class SittingPlanService {
             throw new BadRequestException("Seat number already taken in this room for this exam");
         }
         long assignedCount = sittingPlanRepository.countByExamScheduleIdAndRoomId(dto.getExamScheduleId(), dto.getRoomId());
-        Integer roomCapacity = 0;
-        try {
-            roomCapacity = (Integer) Room.class.getDeclaredField("capacity").get(room);
-        } catch (Exception e) {
-            throw new BadRequestException("Room capacity not defined");
-        }
+        Integer roomCapacity = room.getCapacity();
         if (roomCapacity != null && assignedCount >= roomCapacity) {
             throw new BadRequestException("Room capacity exceeded");
         }
@@ -64,15 +60,15 @@ public class SittingPlanService {
     }
 
     public List<SittingPlanResponseDTO> getSittingPlanByExam(Long examScheduleId) {
-        return sittingPlanRepository.findAll().stream()
-                .filter(sp -> sp.getExamSchedule().getId().equals(examScheduleId))
+        List<SittingPlan> sittingPlans = sittingPlanRepository.findByExamScheduleId(examScheduleId);
+        return sittingPlans.stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     public List<SittingPlanResponseDTO> getSittingPlanByRoom(Long roomId) {
-        return sittingPlanRepository.findAll().stream()
-                .filter(sp -> sp.getRoom().getId().equals(roomId))
+        List<SittingPlan> sittingPlans = sittingPlanRepository.findByRoomId(roomId);
+        return sittingPlans.stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
