@@ -11,6 +11,9 @@ public class InvigilationRequestDTO {
     private UUID staffId;
     @NotNull
     private InvigilationRole role;
+    @NotNull
+    private UUID roomId;
+    
     // getters and setters
     public Long getExamScheduleId() { return examScheduleId; }
     public void setExamScheduleId(Long examScheduleId) { this.examScheduleId = examScheduleId; }
@@ -18,5 +21,7 @@ public class InvigilationRequestDTO {
     public void setStaffId(UUID staffId) { this.staffId = staffId; }
     public InvigilationRole getRole() { return role; }
     public void setRole(InvigilationRole role) { this.role = role; }
+    public UUID getRoomId() { return roomId; }
+    public void setRoomId(UUID roomId) { this.roomId = roomId; }
 }
 

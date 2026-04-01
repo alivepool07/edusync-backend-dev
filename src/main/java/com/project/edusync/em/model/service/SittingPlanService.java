@@ -85,6 +85,18 @@ public class SittingPlanService {
     }
 
     @Transactional
+    public void bulkRemoveSeatAssignments(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BadRequestException("No seat assignment IDs provided");
+        }
+        List<SittingPlan> plans = sittingPlanRepository.findAllById(ids);
+        if (plans.size() != ids.size()) {
+            throw new ResourceNotFoundException("SittingPlan", "ids", "Some IDs not found");
+        }
+        sittingPlanRepository.deleteAllInBatch(plans);
+    }
+
+    @Transactional
     public List<SittingPlanResponseDTO> bulkAutoAllocate(AutoAllocationRequestDTO dto) {
         ExamSchedule examSchedule = examScheduleRepository.findById(dto.getExamScheduleId())
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSchedule", "id", dto.getExamScheduleId()));

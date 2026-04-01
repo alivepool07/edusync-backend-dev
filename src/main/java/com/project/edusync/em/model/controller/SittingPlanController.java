@@ -36,6 +36,12 @@ public class SittingPlanController {
         return ResponseEntity.ok(sittingPlanService.getSittingPlanByRoom(roomId));
     }
 
+    @DeleteMapping("/bulk")
+    public ResponseEntity<Void> bulkRemoveSeats(@RequestBody List<Long> ids) {
+        sittingPlanService.bulkRemoveSeatAssignments(ids);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> removeSeat(@PathVariable Long id) {
         sittingPlanService.removeSeatAssignment(id);

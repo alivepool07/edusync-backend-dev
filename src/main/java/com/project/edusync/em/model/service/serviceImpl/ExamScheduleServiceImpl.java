@@ -36,6 +36,10 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
     private final com.project.edusync.adm.repository.TimeslotRepository timeslotRepository;
     private final StudentRepository studentRepository;
 
+    private final com.project.edusync.em.model.repository.SittingPlanRepository sittingPlanRepository;
+    private final com.project.edusync.em.model.repository.SeatAllocationRepository seatAllocationRepository;
+    private final com.project.edusync.em.model.repository.InvigilationRepository invigilationRepository;
+
     @Override
     public ExamScheduleResponseDTO createSchedule(UUID examUuid, ExamScheduleRequestDTO requestDTO) {
         Exam exam = examRepository.findByUuid(examUuid)
@@ -85,7 +89,12 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
         if (!examScheduleRepository.existsById(scheduleId)) {
             throw new EdusyncException("EM-404", "Exam Schedule not found", HttpStatus.NOT_FOUND);
         }
-        // TODO: Add check here to prevent deletion if marks have already been entered for this schedule.
+        
+        // Cascade delete explicit relationships
+        sittingPlanRepository.deleteAllInBatch(sittingPlanRepository.findByExamScheduleId(scheduleId));
+        invigilationRepository.deleteAllInBatch(invigilationRepository.findByExamScheduleId(scheduleId));
+        seatAllocationRepository.deleteAllInBatch(seatAllocationRepository.findByExamScheduleId(scheduleId));
+
         examScheduleRepository.deleteById(scheduleId);
     }
 
