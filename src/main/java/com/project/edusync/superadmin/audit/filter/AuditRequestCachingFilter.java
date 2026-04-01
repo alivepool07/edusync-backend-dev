@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingRequestWrapper;
@@ -19,14 +20,28 @@ public class AuditRequestCachingFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String contentType = request.getContentType();
-        return contentType != null && contentType.toLowerCase().startsWith("multipart/");
+        String path = request.getRequestURI();
+
+        if (contentType != null && contentType.toLowerCase().startsWith("multipart/")) {
+            return true;
+        }
+
+        if (path == null) {
+            return false;
+        }
+
+        String normalizedPath = path.toLowerCase();
+        return normalizedPath.contains("/upload")
+                || normalizedPath.contains("/import")
+                || normalizedPath.contains("/profile/image")
+                || normalizedPath.contains("/bulk");
     }
 
     @Override
     protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
         HttpServletRequest wrapped = request instanceof ContentCachingRequestWrapper
                 ? request
@@ -35,4 +50,6 @@ public class AuditRequestCachingFilter extends OncePerRequestFilter {
         filterChain.doFilter(wrapped, response);
     }
 }
+
+
 

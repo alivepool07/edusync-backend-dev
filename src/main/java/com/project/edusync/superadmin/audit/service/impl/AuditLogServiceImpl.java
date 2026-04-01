@@ -3,8 +3,6 @@ package com.project.edusync.superadmin.audit.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.edusync.common.security.AuthUtil;
-import com.project.edusync.iam.model.entity.User;
 import com.project.edusync.superadmin.audit.model.dto.AuditLogResponseDto;
 import com.project.edusync.superadmin.audit.model.entity.AuditLog;
 import com.project.edusync.superadmin.audit.repository.AuditLogRepository;
@@ -14,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 
 @Service
 @RequiredArgsConstructor
@@ -29,39 +30,24 @@ import java.util.Map;
 public class AuditLogServiceImpl implements AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
-    private final AuthUtil authUtil;
+    private final BlockingQueue<AuditLog> auditLogQueue;
     private final ObjectMapper objectMapper;
 
     @Override
-    @Async
-    @Transactional
     public void logAsync(String action,
                          String entityType,
                          String entityId,
                          String entityDisplayName,
                          Map<String, Object> changePayload,
                          String ipAddress,
-                         String userAgent) {
+                         String userAgent,
+                         String actorUsernameHint) {
         try {
-            String actorUsername = "system";
-            String actorRole = "SYSTEM";
-            try {
-                User actor = authUtil.getCurrentUser();
-                actorUsername = actor.getUsername();
-                actorRole = actor.getRoles().stream()
-                        .map(role -> role.getName() == null ? "" : role.getName())
-                        .findFirst()
-                        .orElse("SYSTEM");
-                if (actorRole.startsWith("ROLE_")) {
-                    actorRole = actorRole.substring(5);
-                }
-            } catch (Exception ignored) {
-                // background/system calls may not have auth context
-            }
+            ActorInfo actorInfo = resolveActor(actorUsernameHint);
 
             AuditLog logEntry = new AuditLog();
-            logEntry.setActorUsername(actorUsername);
-            logEntry.setActorRole(actorRole);
+            logEntry.setActorUsername(actorInfo.username());
+            logEntry.setActorRole(actorInfo.role());
             logEntry.setAction(action);
             logEntry.setEntityType(entityType);
             logEntry.setEntityId(entityId);
@@ -70,11 +56,45 @@ public class AuditLogServiceImpl implements AuditLogService {
             logEntry.setIpAddress(ipAddress);
             logEntry.setUserAgent(userAgent);
             logEntry.setTimestamp(Instant.now());
-            auditLogRepository.save(logEntry);
+
+            boolean accepted = auditLogQueue.offer(logEntry);
+            if (!accepted) {
+                log.warn("Audit queue at capacity - dropping event: action={}, actor={}", action, actorInfo.username());
+            }
         } catch (Exception ex) {
             log.error("Failed to write audit log action={} entityType={} entityId={}", action, entityType, entityId, ex);
         }
     }
+
+    private ActorInfo resolveActor(String actorUsernameHint) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean hasAuthenticatedContext = authentication != null
+                && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken);
+
+        if (hasAuthenticatedContext) {
+            String actorUsername = authentication.getName();
+            String actorRole = authentication.getAuthorities().stream()
+                    .map(granted -> granted.getAuthority())
+                    .filter(StringUtils::hasText)
+                    .findFirst()
+                    .orElse("SYSTEM");
+            if (actorRole.startsWith("ROLE_")) {
+                actorRole = actorRole.substring(5);
+            }
+            if (StringUtils.hasText(actorUsername)) {
+                return new ActorInfo(actorUsername, actorRole);
+            }
+        }
+
+        if (StringUtils.hasText(actorUsernameHint)) {
+            return new ActorInfo(actorUsernameHint.trim(), "USER");
+        }
+
+        return new ActorInfo("system", "SYSTEM");
+    }
+
+    private record ActorInfo(String username, String role) {}
 
     @Override
     @Transactional(readOnly = true)
@@ -85,7 +105,7 @@ public class AuditLogServiceImpl implements AuditLogService {
                                             Instant to,
                                             Pageable pageable) {
 
-        Specification<AuditLog> spec = Specification.where(null);
+        Specification<AuditLog> spec = (root, query, cb) -> cb.conjunction();
 
         if (StringUtils.hasText(actor)) {
             spec = spec.and((root, query, cb) -> cb.like(cb.lower(root.get("actorUsername")), "%" + actor.trim().toLowerCase() + "%"));
@@ -155,4 +175,8 @@ public class AuditLogServiceImpl implements AuditLogService {
         });
     }
 }
+
+
+
+
 

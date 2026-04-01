@@ -15,7 +15,8 @@ public interface AuditLogService {
                   String entityDisplayName,
                   Map<String, Object> changePayload,
                   String ipAddress,
-                  String userAgent);
+                  String userAgent,
+                  String actorUsernameHint);
 
     Page<AuditLogResponseDto> search(String actor,
                                      String action,
@@ -24,4 +25,5 @@ public interface AuditLogService {
                                      Instant to,
                                      Pageable pageable);
 }
+
 
