@@ -49,47 +49,34 @@ public class PdfGenerationService {
      */
     public byte[] generatePdfFromHtml(String templateName, Map<String, Object> data) {
         try {
-            // 1. Process the HTML template with Thymeleaf
-            String rawHtml = renderHtmlFromTemplate(templateName, data);
-
-            // 4. Parse with Jsoup and convert to W3C DOM for openhtmltopdf
-            Document jsoupDoc = Jsoup.parse(rawHtml);
-            jsoupDoc.outputSettings().syntax(Document.OutputSettings.Syntax.xml);
-
-            // 5. Generate the PDF using OpenHTMLtoPDF
-            String baseUrl = FileSystems.getDefault()
-                    .getPath("src", "main", "resources", "templates")
-                    .toUri().toURL().toString();
-
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            PdfRendererBuilder builder = new PdfRendererBuilder();
-            builder.useFastMode();
-            builder.useSVGDrawer(new BatikSVGDrawer());
-            builder.withW3cDocument(new W3CDom().fromJsoup(jsoupDoc), baseUrl);
-            builder.toStream(outputStream);
-            builder.run();
-
-            return outputStream.toByteArray();
-
-        } catch (Exception e) {
-            log.error("Error during PDF generation: {}", e.getMessage(), e);
-            throw new PdfGenerationException("Error generating PDF document", e);
-        }
-    }
-
-    /**
-     * Renders a Thymeleaf template into raw HTML while keeping data defaults
-     * aligned with PDF generation behavior.
-     */
-    public String renderHtmlFromTemplate(String templateName, Map<String, Object> data) {
-        try {
             ensureTemplateDataDefaults(data);
+
             Context context = new Context();
             context.setVariables(data);
-            return templateEngine.process(templateName, context);
-        } catch (Exception e) {
-            log.error("Error during HTML rendering: {}", e.getMessage(), e);
-            throw new PdfGenerationException("Error generating HTML document", e);
+            String rawHtml = templateEngine.process(templateName, context);
+
+            Document jsoupDoc = Jsoup.parse(rawHtml);
+            jsoupDoc.outputSettings().syntax(Document.OutputSettings.Syntax.xml);
+            org.w3c.dom.Document w3cDoc = new W3CDom().fromJsoup(jsoupDoc);
+
+            try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+                PdfRendererBuilder builder = new PdfRendererBuilder();
+                builder.useFastMode();
+                builder.useSVGDrawer(new BatikSVGDrawer());
+
+                String baseUri = FileSystems.getDefault()
+                        .getPath("src/main/resources/templates")
+                        .toUri()
+                        .toString();
+
+                builder.withW3cDocument(w3cDoc, baseUri);
+                builder.toStream(outputStream);
+                builder.run();
+                return outputStream.toByteArray();
+            }
+        } catch (Exception ex) {
+            log.error("Failed to generate PDF for template {}", templateName, ex);
+            throw new PdfGenerationException("Failed to generate PDF", ex);
         }
     }
 

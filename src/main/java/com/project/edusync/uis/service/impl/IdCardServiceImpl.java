@@ -97,27 +97,6 @@ public class IdCardServiceImpl implements IdCardService {
         throw new ResourceNotFoundException("Student or Staff", "userId", userId);
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public String generateMyIdCardPreviewHtml(Long userId, String template) {
-        String tmpl = resolveTemplate(template);
-        log.info("Generating self-service ID card HTML preview for userId={}, template={}", userId, tmpl);
-
-        Optional<Student> studentOpt = studentRepository.findByUserProfile_User_Id(userId);
-        if (studentOpt.isPresent()) {
-            Map<String, Object> data = buildStudentCardData(studentOpt.get());
-            return pdfGenerationService.renderHtmlFromTemplate(resolveStudentTemplateName(tmpl), data);
-        }
-
-        Optional<Staff> staffOpt = staffRepository.findByUserProfile_User_Id(userId);
-        if (staffOpt.isPresent()) {
-            Map<String, Object> data = buildStaffCardData(staffOpt.get());
-            return pdfGenerationService.renderHtmlFromTemplate(resolveStaffTemplateName(tmpl), data);
-        }
-
-        throw new ResourceNotFoundException("Student or Staff", "userId", userId);
-    }
-
     // ── Batch Generation ─────────────────────────────────────────────────
 
     @Override

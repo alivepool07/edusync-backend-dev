@@ -6,7 +6,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,12 +26,7 @@ import java.time.Instant;
 public class AuditLog {
 
     @Id
-    @SequenceGenerator(
-            name = "audit_log_seq_gen",
-            sequenceName = "audit_logs_id_seq",
-            allocationSize = 50
-    )
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "audit_log_seq_gen")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "actor_username", length = 100)
@@ -65,8 +59,3 @@ public class AuditLog {
     @Column(name = "event_timestamp", nullable = false)
     private Instant timestamp;
 }
-
-
-
-
-

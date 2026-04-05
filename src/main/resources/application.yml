@@ -42,6 +42,11 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Keep baseline opt-in by default for safety in existing environments.
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
 
 # ===================================================================
 # APPLICATION-SPECIFIC PROPERTIES
@@ -65,6 +70,12 @@ app:
   # to avoid conflict with Spring Security's reserved property namespace.
   security:
     max-devices: 2
+
+  hrms:
+    payroll:
+      attendance:
+        # Finalized policy options: TREAT_UNMARKED_AS_ABSENT, MARKED_ONLY, FAIL_ON_PARTIAL
+        partial-mark-policy: ${HRMS_PAYROLL_ATTENDANCE_POLICY:TREAT_UNMARKED_AS_ABSENT}
 
   media:
     provider: ${MEDIA_PROVIDER:cloudinary}
@@ -149,11 +160,27 @@ spring:
       auto-commit: false
 
   jpa:
-    # Allowed only in dev: auto-syncs entity changes to the DB schema.
+    # Migration-first mode: validate schema against entities.
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     # Enabled only in dev for debugging SQL queries.
     show-sql: true
+  flyway:
+    # Dev can bootstrap on existing local schemas without manual baseline steps.
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:true}
+
+---
+# ===================================================================
+# STAGING PROFILE (Active when spring.profiles.active=staging)
+# ===================================================================
+spring:
+  config:
+    activate:
+      on-profile: staging
+
+  flyway:
+    # Staging requires an explicit opt-in when baselining existing DBs.
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
 
 ---
 # ===================================================================
@@ -184,6 +211,9 @@ spring:
     hibernate:
       ddl-auto: validate
     show-sql: false
+  flyway:
+    # Production baseline remains explicit and controlled via env var.
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
 
 # SECURITY: Enforce HTTPS in production.
 server:

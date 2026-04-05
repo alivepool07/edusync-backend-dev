@@ -27,7 +27,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * REST Controller for managing User Profiles.
@@ -225,24 +224,6 @@ public class ProfileController {
                 .body(pdf);
     }
 
-    @GetMapping(value = "/me/id-card/preview-html", produces = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize("hasAuthority('profile:read:own')")
-    @Operation(summary = "Get My ID Card HTML Preview",
-            description = "Renders the authenticated user's ID card HTML (student or staff) using the active ID-card template and returns it in JSON.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "ID card HTML rendered successfully"),
-            @ApiResponse(responseCode = "404", description = "No student or staff profile found for the current user")
-    })
-    public ResponseEntity<Map<String, String>> getMyIdCardPreviewHtml() {
-        Long currentUserId = authUtil.getCurrentUserId();
-        log.info("Self-service ID card HTML preview requested for userId={}", currentUserId);
-
-        // Pass empty string so IdCardService falls back to 'school.id_card_template'
-        String html = idCardService.generateMyIdCardPreviewHtml(currentUserId, "");
-        return ResponseEntity.ok(Map.of("html", html));
-    }
-
-    // =================================================================================
     // ADMINISTRATIVE ENDPOINTS (/{userId})
     // =================================================================================
 
