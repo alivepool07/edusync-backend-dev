@@ -63,14 +63,4 @@ public interface IdCardService {
      *         if the user has no Student or Staff profile.
      */
     byte[] generateMyIdCard(Long userId, String template);
-
-    /**
-     * Generates rendered ID-card HTML for the currently authenticated user.
-     * Uses the same data/context pipeline as PDF generation so preview and print stay in sync.
-     *
-     * @param userId   The IAM user ID from the JWT token.
-     * @param template The template style ("classic", "modern", "minimal").
-     * @return Fully rendered HTML string with embedded Base64 assets.
-     */
-    String generateMyIdCardPreviewHtml(Long userId, String template);
 }
