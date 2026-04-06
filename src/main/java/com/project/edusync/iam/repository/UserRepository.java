@@ -15,6 +15,9 @@ public interface UserRepository extends JpaRepository<User, Integer> {
 
     Optional<User> findByUuid(UUID uuid);
 
+    @Query("SELECT u FROM User u WHERE u.id = :id")
+    Optional<User> findByIdAsLong(@Param("id") Long id);
+
     /**
      * Finds a user by their username and eagerly fetches their roles
      * and the permissions associated with those roles in a single query.

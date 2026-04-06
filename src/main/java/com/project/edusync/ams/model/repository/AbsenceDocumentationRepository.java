@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Repository for managing AbsenceDocumentation persistence.
@@ -22,6 +23,8 @@ import java.util.Optional;
  */
 @Repository
 public interface AbsenceDocumentationRepository extends JpaRepository<AbsenceDocumentation, Long> {
+
+    Optional<AbsenceDocumentation> findByUuid(UUID uuid);
 
     /**
      * Retrieves absence documentation records by approval status.

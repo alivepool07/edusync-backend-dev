@@ -5,6 +5,8 @@ import com.project.edusync.ams.model.dto.response.AbsenceDocumentationResponseDT
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.UUID;
+
 /**
  * Service contract for absence documentation (excuse) workflow.
  */
@@ -30,28 +32,28 @@ public interface AbsenceDocumentationService {
     /**
      * Get a single documentation record by id.
      *
-     * @param id documentation id
+     * @param docUuid documentation UUID
      * @return DTO for the record
      */
-    AbsenceDocumentationResponseDTO getById(Long id);
+    AbsenceDocumentationResponseDTO getByUuid(UUID docUuid);
 
     /**
      * Approve a pending documentation entry. This will also update the linked StudentDailyAttendance
      * to an 'Excused' attendance type (if configured).
      *
-     * @param id documentation id
+     * @param docUuid documentation UUID
      * @param performedByStaffId staff id performing approval (for audit)
      * @return updated documentation DTO
      */
-    AbsenceDocumentationResponseDTO approve(Long id, Long performedByStaffId);
+    AbsenceDocumentationResponseDTO approve(UUID docUuid, Long performedByStaffId);
 
     /**
      * Reject a pending documentation entry with an optional rejection reason.
      *
-     * @param id documentation id
+     * @param docUuid documentation UUID
      * @param performedByStaffId staff id performing rejection
      * @param rejectionReason optional rejection reason
      * @return updated documentation DTO
      */
-    AbsenceDocumentationResponseDTO reject(Long id, Long performedByStaffId, String rejectionReason);
+    AbsenceDocumentationResponseDTO reject(UUID docUuid, Long performedByStaffId, String rejectionReason);
 }

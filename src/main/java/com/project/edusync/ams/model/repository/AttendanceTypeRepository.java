@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface AttendanceTypeRepository extends JpaRepository<AttendanceType, Long> {
@@ -54,6 +55,8 @@ public interface AttendanceTypeRepository extends JpaRepository<AttendanceType, 
      * @return Optional containing the active Attendance Type.
      */
     Optional<AttendanceType> findByIdAndIsActiveTrue(Long id);
+
+    Optional<AttendanceType> findByUuidAndIsActiveTrue(UUID uuid);
 
     /**
      * Finds an active attendance type by its unique short code (e.g., 'P', 'A').

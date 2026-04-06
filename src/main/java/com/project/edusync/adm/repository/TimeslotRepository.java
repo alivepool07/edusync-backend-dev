@@ -1,6 +1,7 @@
 package com.project.edusync.adm.repository;
 
 import com.project.edusync.adm.model.entity.Timeslot;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -34,6 +35,20 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, Long> {
 
     @Query("SELECT t FROM Timeslot t WHERE t.isActive = true AND t.dayOfWeek = :dayOfWeek")
     List<Timeslot> findAllActiveByDayOfWeek(Short dayOfWeek);
+
+    @Query("""
+            SELECT t FROM Timeslot t
+            WHERE t.isActive = true
+              AND t.dayOfWeek = :dayOfWeek
+              AND COALESCE(t.isBreak, false) = false
+              AND COALESCE(t.isNonTeachingSlot, false) = false
+            ORDER BY t.startTime ASC
+            """)
+    List<Timeslot> findActiveTeachingByDayOfWeek(Short dayOfWeek, Pageable pageable);
+
+    default Optional<Timeslot> findFirstTeachingSlotByDayOfWeek(Short dayOfWeek) {
+        return findActiveTeachingByDayOfWeek(dayOfWeek, Pageable.ofSize(1)).stream().findFirst();
+    }
 
     // --- Uniqueness Checks ---
     @Query("SELECT CASE WHEN COUNT(t) > 0 THEN true ELSE false END " +

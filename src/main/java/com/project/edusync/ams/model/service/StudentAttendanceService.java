@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface StudentAttendanceService {
 
@@ -17,20 +18,20 @@ public interface StudentAttendanceService {
 
     Page<StudentAttendanceResponseDTO> listAttendances(
             Pageable pageable,
-            Optional<Long> studentId,
-            Optional<Long> takenByStaffId,
+            Optional<UUID> studentUuid,
+            Optional<UUID> takenByStaffUuid,
             Optional<String> fromDateIso,
             Optional<String> toDateIso,
             Optional<String> attendanceTypeShortCode
     );
 
-    StudentAttendanceResponseDTO getAttendance(Long id);
+    StudentAttendanceResponseDTO getAttendance(UUID recordUuid);
 
     StudentAttendanceResponseDTO updateAttendance(
-            Long recordId,
+            UUID recordUuid,
             StudentAttendanceRequestDTO req,
             Long performedByStaffId
     );
 
-    void deleteAttendance(Long recordId, Long performedByStaffId);
+    void deleteAttendance(UUID recordUuid, Long performedByStaffId);
 }

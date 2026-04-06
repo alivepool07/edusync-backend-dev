@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface StaffAttendanceService {
 
@@ -16,12 +17,12 @@ public interface StaffAttendanceService {
     List<StaffAttendanceResponseDTO> bulkCreate(List<StaffAttendanceRequestDTO> requests, Long performedBy);
 
     Page<StaffAttendanceResponseDTO> listAttendances(Pageable pageable,
-                                                     Optional<Long> staffId,
+                                                     Optional<UUID> staffUuid,
                                                      Optional<LocalDate> date);
 
-    StaffAttendanceResponseDTO getAttendance(Long id);
+    StaffAttendanceResponseDTO getAttendance(UUID recordUuid);
 
-    StaffAttendanceResponseDTO updateAttendance(Long id, StaffAttendanceRequestDTO request, Long performedBy);
+    StaffAttendanceResponseDTO updateAttendance(UUID recordUuid, StaffAttendanceRequestDTO request, Long performedBy);
 
-    void deleteAttendance(Long id, Long performedBy);
+    void deleteAttendance(UUID recordUuid, Long performedBy);
 }

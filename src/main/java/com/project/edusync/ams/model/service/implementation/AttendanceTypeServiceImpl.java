@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -70,18 +71,18 @@ public class AttendanceTypeServiceImpl implements AttendanceTypeService {
 
     @Override
     @Transactional(readOnly = true)
-    public AttendanceTypeResponseDTO findById(Long typeId) {
-        AttendanceType type = attendanceTypeRepository.findByIdAndIsActiveTrue(typeId)
-                .orElseThrow(() -> new AttendanceTypeNotFoundException(typeId.toString()));
+    public AttendanceTypeResponseDTO findByUuid(UUID typeUuid) {
+        AttendanceType type = attendanceTypeRepository.findByUuidAndIsActiveTrue(typeUuid)
+                .orElseThrow(() -> new AttendanceTypeNotFoundException(typeUuid.toString()));
         return mapToDto(type);
     }
 
     @Override
     @Transactional
-    public AttendanceTypeResponseDTO update(Long typeId, AttendanceTypeRequestDTO requestDTO) {
-        log.info("AMS: Updating attendance type ID: {}", typeId);
-        AttendanceType typeToUpdate = attendanceTypeRepository.findByIdAndIsActiveTrue(typeId)
-                .orElseThrow(() -> new AttendanceTypeNotFoundException(typeId.toString()));
+    public AttendanceTypeResponseDTO update(UUID typeUuid, AttendanceTypeRequestDTO requestDTO) {
+        log.info("AMS: Updating attendance type UUID: {}", typeUuid);
+        AttendanceType typeToUpdate = attendanceTypeRepository.findByUuidAndIsActiveTrue(typeUuid)
+                .orElseThrow(() -> new AttendanceTypeNotFoundException(typeUuid.toString()));
 
         // Update fields from DTO
         typeToUpdate.setTypeName(requestDTO.getTypeName());
@@ -98,10 +99,10 @@ public class AttendanceTypeServiceImpl implements AttendanceTypeService {
 
     @Override
     @Transactional
-    public void softDelete(Long typeId) {
-        log.warn("AMS: Attempting soft delete (deactivation) of Attendance Type ID: {}", typeId);
-        AttendanceType typeToDelete = attendanceTypeRepository.findByIdAndIsActiveTrue(typeId)
-                .orElseThrow(() -> new AttendanceTypeNotFoundException(typeId.toString()));
+    public void softDelete(UUID typeUuid) {
+        log.warn("AMS: Attempting soft delete (deactivation) of Attendance Type UUID: {}", typeUuid);
+        AttendanceType typeToDelete = attendanceTypeRepository.findByUuidAndIsActiveTrue(typeUuid)
+                .orElseThrow(() -> new AttendanceTypeNotFoundException(typeUuid.toString()));
 
         // --- PROFESSIONAL DATA INTEGRITY CHECK (Future Implementation) ---
         // Before soft-deleting, check if any StudentDailyAttendance or StaffDailyAttendance records
@@ -110,6 +111,6 @@ public class AttendanceTypeServiceImpl implements AttendanceTypeService {
 
         typeToDelete.setActive(false);
         attendanceTypeRepository.save(typeToDelete);
-        log.info("AMS: Successfully deactivated Attendance Type ID: {}", typeId);
+        log.info("AMS: Successfully deactivated Attendance Type UUID: {}", typeUuid);
     }
 }

@@ -1,14 +1,16 @@
 package com.project.edusync.ams.model.dto.request;
 
 import com.project.edusync.ams.model.enums.AttendanceSource;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
 import lombok.Value;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.UUID;
 
 /**
  * Request DTO for creating or updating a StaffDailyAttendance record.
@@ -17,16 +19,20 @@ import java.time.LocalTime;
 @Value
 public class StaffAttendanceRequestDTO {
 
-    /** Logical FK to UIS.Staff.id. */
-    @NotNull(message = "Staff ID is required")
+    @Schema(description = "Staff public UUID (preferred)", format = "uuid")
+    UUID staffUuid;
+
+    /** Logical FK to UIS.Staff.id (deprecated). */
+    @Deprecated
+    @Schema(description = "Deprecated legacy staff id. Use staffUuid.", deprecated = true)
     Long staffId;
 
-    @NotNull(message = "Attendance date is required")
+    @jakarta.validation.constraints.NotNull(message = "Attendance date is required")
     @PastOrPresent(message = "Attendance date cannot be in the future")
     LocalDate attendanceDate;
 
     /** Short code representing attendance type (P/A/L/etc.) - preferred over numeric type id */
-    @NotNull(message = "Attendance short code is required")
+    @jakarta.validation.constraints.NotNull(message = "Attendance short code is required")
     String attendanceShortCode;
 
     LocalTime timeIn;
@@ -37,9 +43,14 @@ public class StaffAttendanceRequestDTO {
     Double totalHours;
 
     /** Strong-typed source */
-    @NotNull(message = "Attendance source must be specified.")
+    @jakarta.validation.constraints.NotNull(message = "Attendance source must be specified.")
     AttendanceSource source; // e.g., MANUAL, BIOMETRIC, SYSTEM
 
     @Size(max = 500, message = "Notes cannot exceed 500 characters")
     String notes;
+
+    @AssertTrue(message = "Either staffUuid or deprecated staffId must be provided")
+    private boolean hasStaffIdentifier() {
+        return staffUuid != null || staffId != null;
+    }
 }

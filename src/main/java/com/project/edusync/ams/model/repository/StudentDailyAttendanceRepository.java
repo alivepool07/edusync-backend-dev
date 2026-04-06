@@ -11,9 +11,12 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface StudentDailyAttendanceRepository extends JpaRepository<StudentDailyAttendance, Long> {
+
+    Optional<StudentDailyAttendance> findByUuid(UUID uuid);
 
     interface StudentAttendanceAggregateProjection {
         Long getStudentId();

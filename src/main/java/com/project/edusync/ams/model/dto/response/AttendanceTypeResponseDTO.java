@@ -1,5 +1,6 @@
 package com.project.edusync.ams.model.dto.response;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Value;
 import java.util.UUID;
 
@@ -11,6 +12,8 @@ import java.util.UUID;
 public class AttendanceTypeResponseDTO {
 
     /** Internal Primary Key */
+    @Deprecated
+    @Schema(description = "Deprecated internal id", deprecated = true)
     Long id;
 
     /** External Public Identifier */

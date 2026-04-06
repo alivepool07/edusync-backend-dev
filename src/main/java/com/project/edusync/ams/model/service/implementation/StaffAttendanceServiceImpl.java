@@ -10,6 +10,7 @@ import com.project.edusync.ams.model.exception.AttendanceRecordNotFoundException
 import com.project.edusync.ams.model.repository.AttendanceTypeRepository;
 import com.project.edusync.ams.model.repository.StaffDailyAttendanceRepository;
 import com.project.edusync.ams.model.service.StaffAttendanceService;
+import com.project.edusync.uis.repository.StaffRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
 
     private final StaffDailyAttendanceRepository repo;
     private final AttendanceTypeRepository attendanceTypeRepo;
+    private final StaffRepository staffRepository;
 
     /* -------------------------------------------------------------
      * CREATE / UPSERT
@@ -44,10 +46,10 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
                 );
 
         Optional<StaffDailyAttendance> existing =
-                repo.findByStaffIdAndAttendanceDate(req.getStaffId(), req.getAttendanceDate());
+                repo.findByStaffIdAndAttendanceDate(resolveStaffId(req), req.getAttendanceDate());
 
         StaffDailyAttendance e = existing.orElseGet(StaffDailyAttendance::new);
-        e.setStaffId(req.getStaffId());
+        e.setStaffId(resolveStaffId(req));
         e.setAttendanceDate(req.getAttendanceDate());
         e.setAttendanceType(at);
         e.setTimeIn(req.getTimeIn());
@@ -90,11 +92,12 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
             validateTimes(r.getTimeIn(), r.getTimeOut());
 
             AttendanceType at = types.get(r.getAttendanceShortCode().trim().toUpperCase());
+            Long staffId = resolveStaffId(r);
             Optional<StaffDailyAttendance> existing =
-                    repo.findByStaffIdAndAttendanceDate(r.getStaffId(), r.getAttendanceDate());
+                    repo.findByStaffIdAndAttendanceDate(staffId, r.getAttendanceDate());
 
             StaffDailyAttendance e = existing.orElseGet(StaffDailyAttendance::new);
-            e.setStaffId(r.getStaffId());
+            e.setStaffId(staffId);
             e.setAttendanceDate(r.getAttendanceDate());
             e.setAttendanceType(at);
             e.setTimeIn(r.getTimeIn());
@@ -114,8 +117,10 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
      * ------------------------------------------------------------- */
     @Override
     public Page<StaffAttendanceResponseDTO> listAttendances(Pageable pageable,
-                                                            Optional<Long> staffId,
+                                                            Optional<UUID> staffUuid,
                                                             Optional<LocalDate> date) {
+
+        Optional<Long> staffId = staffUuid.map(this::resolveStaffIdFromUuid);
 
         Page<StaffDailyAttendance> page = repo.findAll(pageable);
 
@@ -135,10 +140,10 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
      * GET ONE
      * ------------------------------------------------------------- */
     @Override
-    public StaffAttendanceResponseDTO getAttendance(Long id) {
-        StaffDailyAttendance e = repo.findById(id)
+    public StaffAttendanceResponseDTO getAttendance(UUID recordUuid) {
+        StaffDailyAttendance e = repo.findByUuid(recordUuid)
                 .orElseThrow(() ->
-                        new AttendanceRecordNotFoundException("Staff attendance not found: " + id)
+                        new AttendanceRecordNotFoundException("Staff attendance not found: " + recordUuid)
                 );
         return toDto(e);
     }
@@ -148,12 +153,14 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
      * ------------------------------------------------------------- */
     @Override
     @Transactional
-    public StaffAttendanceResponseDTO updateAttendance(Long id, StaffAttendanceRequestDTO req, Long performedBy) {
+    public StaffAttendanceResponseDTO updateAttendance(UUID recordUuid, StaffAttendanceRequestDTO req, Long performedBy) {
 
-        StaffDailyAttendance e = repo.findById(id)
-                .orElseThrow(() -> new AttendanceRecordNotFoundException("Record not found: " + id));
+        StaffDailyAttendance e = repo.findByUuid(recordUuid)
+                .orElseThrow(() -> new AttendanceRecordNotFoundException("Record not found: " + recordUuid));
 
-        if (!e.getStaffId().equals(req.getStaffId()) ||
+        Long requestedStaffId = resolveStaffId(req);
+
+        if (!e.getStaffId().equals(requestedStaffId) ||
                 !e.getAttendanceDate().equals(req.getAttendanceDate())) {
             throw new AttendanceProcessingException("Cannot change staffId or attendanceDate");
         }
@@ -178,8 +185,10 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
      * ------------------------------------------------------------- */
     @Override
     @Transactional
-    public void deleteAttendance(Long id, Long performedBy) {
-        repo.deleteById(id);
+    public void deleteAttendance(UUID recordUuid, Long performedBy) {
+        StaffDailyAttendance e = repo.findByUuid(recordUuid)
+                .orElseThrow(() -> new AttendanceRecordNotFoundException("Record not found: " + recordUuid));
+        repo.delete(e);
     }
 
     /* -------------------------------------------------------------
@@ -206,8 +215,18 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
             colorCode       = e.getAttendanceType().getColorCode();
         }
 
+        String recordUuid = e.getUuid() == null ? null : e.getUuid().toString();
+        String staffUuid = null;
+        if (e.getStaffId() != null) {
+            staffUuid = staffRepository.findById(e.getStaffId())
+                    .map(s -> s.getUuid() == null ? null : s.getUuid().toString())
+                    .orElse(null);
+        }
+
         return new StaffAttendanceResponseDTO(
                 e.getId(),                    // staffAttendanceId
+                recordUuid,
+                staffUuid,
                 e.getStaffId(),               // staffId
                 null,                         // staffName (not from DB)
                 null,                         // jobTitle
@@ -221,5 +240,21 @@ public class StaffAttendanceServiceImpl implements StaffAttendanceService {
                 e.getSource(),
                 e.getNotes()
         );
+    }
+
+    private Long resolveStaffId(StaffAttendanceRequestDTO req) {
+        if (req.getStaffUuid() != null) {
+            return resolveStaffIdFromUuid(req.getStaffUuid());
+        }
+        if (req.getStaffId() != null) {
+            return req.getStaffId();
+        }
+        throw new AttendanceProcessingException("staffUuid is required (or deprecated staffId during transition)");
+    }
+
+    private Long resolveStaffIdFromUuid(UUID staffUuid) {
+        return staffRepository.findByUuid(staffUuid)
+                .map(s -> s.getId())
+                .orElseThrow(() -> new AttendanceProcessingException("Staff not found for uuid: " + staffUuid));
     }
 }

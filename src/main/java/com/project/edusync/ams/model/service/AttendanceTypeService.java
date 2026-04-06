@@ -4,6 +4,7 @@ import com.project.edusync.ams.model.dto.request.AttendanceTypeRequestDTO;
 import com.project.edusync.ams.model.dto.response.AttendanceTypeResponseDTO;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Interface defining the business logic contract for managing Attendance Type configurations.
@@ -24,24 +25,24 @@ public interface AttendanceTypeService {
     List<AttendanceTypeResponseDTO> findAllActive();
 
     /**
-     * Retrieves a single active Attendance Type by ID.
-     * @param typeId The ID of the type to retrieve.
+     * Retrieves a single active Attendance Type by UUID.
+     * @param typeUuid The UUID of the type to retrieve.
      * @return The AttendanceType as a Response DTO.
      */
-    AttendanceTypeResponseDTO findById(Long typeId);
+    AttendanceTypeResponseDTO findByUuid(UUID typeUuid);
 
     /**
      * Updates an existing active Attendance Type.
-     * @param typeId The ID of the type to update.
+     * @param typeUuid The UUID of the type to update.
      * @param requestDTO The DTO containing the updated details.
      * @return The updated AttendanceType as a Response DTO.
      */
-    AttendanceTypeResponseDTO update(Long typeId, AttendanceTypeRequestDTO requestDTO);
+    AttendanceTypeResponseDTO update(UUID typeUuid, AttendanceTypeRequestDTO requestDTO);
 
     /**
      * Implements soft deletion (archiving) by setting the 'isActive' flag to false.
      * Performs a crucial check to ensure the type is not actively in use.
-     * @param typeId The ID of the type to archive.
+     * @param typeUuid The UUID of the type to archive.
      */
-    void softDelete(Long typeId);
+    void softDelete(UUID typeUuid);
 }

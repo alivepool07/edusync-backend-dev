@@ -1,6 +1,7 @@
 package com.project.edusync.ams.model.dto.response;
 
 import com.project.edusync.ams.model.enums.AttendanceSource;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
 import java.time.LocalDate;
@@ -11,7 +12,18 @@ import java.time.LocalTime;
 @AllArgsConstructor
 public class StaffAttendanceResponseDTO {
 
+    @Deprecated
+    @Schema(description = "Deprecated internal attendance id", deprecated = true)
     private Long staffAttendanceId;
+
+    @Schema(description = "Staff attendance UUID", format = "uuid")
+    private String uuid;
+
+    @Schema(description = "Staff UUID", format = "uuid")
+    private String staffUuid;
+
+    @Deprecated
+    @Schema(description = "Deprecated internal staff id", deprecated = true)
     private Long staffId;
     private String staffName;
     private String jobTitle;

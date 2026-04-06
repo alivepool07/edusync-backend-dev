@@ -16,12 +16,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.cache.CacheManager;
 
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,6 +89,7 @@ class ScheduleServiceImplTest {
         Staff staff = new Staff();
         staff.setId(300L);
         staff.setUserProfile(userProfile);
+        section.setClassTeacher(staff);
 
         TeacherDetails teacherDetails = new TeacherDetails();
         teacherDetails.setStaff(staff);
@@ -103,6 +106,7 @@ class ScheduleServiceImplTest {
         when(teacherDetailsRepository.findActiveById(teacherId)).thenReturn(Optional.of(teacherDetails));
         when(roomRepository.findActiveById(defaultRoomId)).thenReturn(Optional.of(defaultRoom));
         when(timeslotRepository.findActiveById(timeslotId)).thenReturn(Optional.of(timeslot));
+        when(timeslotRepository.findActiveTeachingByDayOfWeek(eq((short) 1), any())).thenReturn(List.of(timeslot));
 
         when(scheduleRepository.findTeacherConflict(teacherId, timeslotId, null, null)).thenReturn(Optional.empty());
         when(scheduleRepository.findRoomConflict(defaultRoomId, timeslotId, null, null)).thenReturn(Optional.empty());
@@ -118,6 +122,59 @@ class ScheduleServiceImplTest {
         assertEquals(defaultRoomId, response.getRoom().getUuid());
         assertEquals(defaultRoomId, dto.getRoomId());
         verify(roomRepository).findActiveById(defaultRoomId);
+    }
+
+    @Test
+    void addSchedule_throwsBadRequest_whenFirstPeriodTeacherIsNotClassTeacher() {
+        UUID sectionId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        Long teacherId = 21L;
+        UUID roomId = UUID.randomUUID();
+        UUID timeslotId = UUID.randomUUID();
+
+        ScheduleRequestDto dto = new ScheduleRequestDto();
+        dto.setSectionId(sectionId);
+        dto.setSubjectId(subjectId);
+        dto.setTeacherId(teacherId);
+        dto.setRoomId(roomId);
+        dto.setTimeslotId(timeslotId);
+
+        AcademicClass academicClass = new AcademicClass();
+        academicClass.setName("Class 10");
+
+        Staff classTeacher = new Staff();
+        classTeacher.setId(901L);
+
+        Section section = new Section();
+        section.setUuid(sectionId);
+        section.setSectionName("A");
+        section.setAcademicClass(academicClass);
+        section.setClassTeacher(classTeacher);
+
+        Subject subject = new Subject();
+        subject.setUuid(subjectId);
+        subject.setName("Mathematics");
+        subject.setSubjectCode("MATH-101");
+
+        Staff assignedTeacherStaff = new Staff();
+        assignedTeacherStaff.setId(300L);
+
+        TeacherDetails teacherDetails = new TeacherDetails();
+        teacherDetails.setStaff(assignedTeacherStaff);
+
+        Timeslot timeslot = new Timeslot();
+        timeslot.setUuid(timeslotId);
+        timeslot.setSlotLabel("P1");
+        timeslot.setDayOfWeek((short) 1);
+        timeslot.setStartTime(LocalTime.of(8, 0));
+        timeslot.setEndTime(LocalTime.of(8, 45));
+
+        when(sectionRepository.findById(sectionId)).thenReturn(Optional.of(section));
+        when(teacherDetailsRepository.findActiveById(teacherId)).thenReturn(Optional.of(teacherDetails));
+        when(timeslotRepository.findActiveById(timeslotId)).thenReturn(Optional.of(timeslot));
+        when(timeslotRepository.findActiveTeachingByDayOfWeek(eq((short) 1), any())).thenReturn(List.of(timeslot));
+
+        assertThrows(InvalidRequestException.class, () -> scheduleService.addSchedule(dto));
     }
 
     @Test

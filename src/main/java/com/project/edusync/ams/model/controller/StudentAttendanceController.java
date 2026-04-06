@@ -4,6 +4,10 @@ import com.project.edusync.ams.model.dto.request.StudentAttendanceRequestDTO;
 import com.project.edusync.ams.model.dto.response.StudentAttendanceResponseDTO;
 import com.project.edusync.ams.model.exception.AttendanceProcessingException;
 import com.project.edusync.ams.model.service.StudentAttendanceService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +32,7 @@ import java.util.*;
 @RequestMapping("${api.url}/auth/ams/records")
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "AMS Student Attendance", description = "UUID-first student attendance record APIs")
 public class StudentAttendanceController {
 
     private final StudentAttendanceService service;
@@ -40,6 +45,7 @@ public class StudentAttendanceController {
      * "takenByStaffId" in each request object.
      */
     @PostMapping
+    @Operation(summary = "Create student attendance records", description = "Accepts UUID-first attendance payloads")
     public ResponseEntity<List<StudentAttendanceResponseDTO>> createBatch(
             @RequestBody @Valid List<StudentAttendanceRequestDTO> requests,
             @RequestHeader(value = "X-User-Id", required = false) Long headerUserId,
@@ -57,12 +63,15 @@ public class StudentAttendanceController {
      * GET list with optional filters.
      */
     @GetMapping
+    @Operation(summary = "List student attendance", description = "Filters by UUID fields and supports stable sorting")
     public ResponseEntity<Page<StudentAttendanceResponseDTO>> list(
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size,
-            @RequestParam(value = "sort", defaultValue = "id,desc") String sort,
-            @RequestParam(value = "studentId", required = false) Long studentId,
-            @RequestParam(value = "takenByStaffId", required = false) Long takenByStaffId,
+            @RequestParam(value = "sort", defaultValue = "createdAt,desc") String sort,
+            @Parameter(description = "Filter by student UUID", schema = @Schema(format = "uuid"))
+            @RequestParam(value = "studentUuid", required = false) UUID studentUuid,
+            @Parameter(description = "Filter by attendance taker staff UUID", schema = @Schema(format = "uuid"))
+            @RequestParam(value = "takenByStaffUuid", required = false) UUID takenByStaffUuid,
             @RequestParam(value = "fromDate", required = false) String fromDate,
             @RequestParam(value = "toDate", required = false) String toDate,
             @RequestParam(value = "attendanceTypeShortCode", required = false) String attendanceTypeShortCode
@@ -76,8 +85,8 @@ public class StudentAttendanceController {
         }
         Pageable pageable = PageRequest.of(page, size, s);
         Page<StudentAttendanceResponseDTO> resp = service.listAttendances(pageable,
-                Optional.ofNullable(studentId),
-                Optional.ofNullable(takenByStaffId),
+                Optional.ofNullable(studentUuid),
+                Optional.ofNullable(takenByStaffUuid),
                 Optional.ofNullable(fromDate),
                 Optional.ofNullable(toDate),
                 Optional.ofNullable(attendanceTypeShortCode));
@@ -87,40 +96,47 @@ public class StudentAttendanceController {
     /**
      * GET single record
      */
-    @GetMapping("/{id}")
-    public ResponseEntity<StudentAttendanceResponseDTO> getById(@PathVariable Long id) {
-        StudentAttendanceResponseDTO resp = service.getAttendance(id);
+    @GetMapping("/{recordUuid}")
+    @Operation(summary = "Get student attendance record by UUID")
+    public ResponseEntity<StudentAttendanceResponseDTO> getById(
+            @Parameter(description = "Attendance record UUID", schema = @Schema(format = "uuid"))
+            @PathVariable UUID recordUuid) {
+        StudentAttendanceResponseDTO resp = service.getAttendance(recordUuid);
         return ResponseEntity.ok(resp);
     }
 
     /**
      * PUT update
      */
-    @PutMapping("/{id}")
+    @PutMapping("/{recordUuid}")
+    @Operation(summary = "Update student attendance record by UUID")
     public ResponseEntity<StudentAttendanceResponseDTO> update(
-            @PathVariable Long id,
+            @Parameter(description = "Attendance record UUID", schema = @Schema(format = "uuid"))
+            @PathVariable UUID recordUuid,
             @RequestBody @Valid StudentAttendanceRequestDTO request,
             @RequestHeader(value = "X-User-Id", required = false) Long headerUserId,
             Authentication authentication) {
 
         Long staffId = extractStaffId(authentication).orElse(headerUserId);
         // do NOT throw here; pass nullable staffId to service
-        StudentAttendanceResponseDTO resp = service.updateAttendance(id, request, staffId);
+        StudentAttendanceResponseDTO resp = service.updateAttendance(recordUuid, request, staffId);
         return ResponseEntity.ok(resp);
     }
 
     /**
      * DELETE soft-delete
      */
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{recordUuid}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete student attendance record by UUID")
     public void delete(
-            @PathVariable Long id,
+            @Parameter(description = "Attendance record UUID", schema = @Schema(format = "uuid"))
+            @PathVariable UUID recordUuid,
             @RequestHeader(value = "X-User-Id", required = false) Long headerUserId,
             Authentication authentication) {
 
         Long staffId = extractStaffId(authentication).orElse(headerUserId);
-        service.deleteAttendance(id, staffId);
+        service.deleteAttendance(recordUuid, staffId);
     }
 
     // Helper: extract staff ID from Authentication principal (if your principal stores it)

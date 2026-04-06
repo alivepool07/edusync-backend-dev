@@ -1,20 +1,29 @@
 package com.project.edusync.ams.model.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
 import lombok.Value;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 @Value
 public class SubmitExcuseRequestDTO {
 
-    @NotNull(message = "attendanceId is required")
+    @Schema(description = "Attendance record UUID (preferred)", format = "uuid")
+    UUID attendanceUuid;
+
+    @Deprecated
+    @Schema(description = "Deprecated legacy attendance id. Use attendanceUuid.", deprecated = true)
     Long attendanceId;
 
-    @NotNull(message = "submittedByParentId is required")
+    @Schema(description = "Submitter user UUID (preferred)", format = "uuid")
+    UUID submittedByParentUuid;
+
+    @Deprecated
+    @Schema(description = "Deprecated legacy submittedByParentId. Use submittedByParentUuid.", deprecated = true)
     Long submittedByParentId;
 
     @Size(max = 1000, message = "Document URL cannot exceed 1000 chars")
@@ -29,4 +38,14 @@ public class SubmitExcuseRequestDTO {
      */
     @PastOrPresent(message = "Attendance date cannot be in future")
     LocalDate attendanceDate;
+
+    @AssertTrue(message = "Either attendanceUuid or deprecated attendanceId must be provided")
+    private boolean hasAttendanceIdentifier() {
+        return attendanceUuid != null || attendanceId != null;
+    }
+
+    @AssertTrue(message = "Either submittedByParentUuid or deprecated submittedByParentId must be provided")
+    private boolean hasSubmitterIdentifier() {
+        return submittedByParentUuid != null || submittedByParentId != null;
+    }
 }
