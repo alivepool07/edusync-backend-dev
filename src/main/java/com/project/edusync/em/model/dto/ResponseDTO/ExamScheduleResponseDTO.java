@@ -23,6 +23,8 @@ public class ExamScheduleResponseDTO {
 
     private Long scheduleId;
     private UUID examUuid; // Public ID of the parent Exam
+    private UUID templateId;
+    private TemplateSnapshotResponseDTO templateSnapshot;
 
     // Rich data for UI display
     private UUID classId;

@@ -218,7 +218,12 @@ public class DataSeeder implements ApplicationRunner {
                 "marks:read:section",
                 "marks:update:section",
                 "timetable:read:own",
-                "student:read:section"
+                "student:read:section",
+                "evaluation:assignment:read:own",
+                "evaluation:answer-sheet:upload",
+                "evaluation:marks:draft",
+                "evaluation:marks:publish",
+                "evaluation:annotation:write"
         ));
 
         blueprint.put("ROLE_LIBRARIAN", List.of(
@@ -262,7 +267,10 @@ public class DataSeeder implements ApplicationRunner {
                 "rbac:permission:read",
                 "rbac:role-permission:assign",
                 "rbac:role-permission:revoke",
-                "rbac:role-permission:read"
+                "rbac:role-permission:read",
+                "evaluation:assignment:manage",
+                "evaluation:assignment:read:all",
+                "evaluation:answer-sheet:read:all"
         ));
 
         blueprint.put("ROLE_ADMIN", List.of(
@@ -280,7 +288,10 @@ public class DataSeeder implements ApplicationRunner {
                 "rbac:permission:read",
                 "rbac:role-permission:assign",
                 "rbac:role-permission:revoke",
-                "rbac:role-permission:read"
+                "rbac:role-permission:read",
+                "evaluation:assignment:manage",
+                "evaluation:assignment:read:all",
+                "evaluation:answer-sheet:read:all"
         ));
 
         blueprint.put("ROLE_SUPER_ADMIN", List.of(
@@ -302,7 +313,10 @@ public class DataSeeder implements ApplicationRunner {
                 "rbac:role-permission:assign",
                 "rbac:role-permission:revoke",
                 "rbac:role-permission:read",
-                "system:settings:manage"
+                "system:settings:manage",
+                "evaluation:assignment:manage",
+                "evaluation:assignment:read:all",
+                "evaluation:answer-sheet:read:all"
         ));
 
         return blueprint;
@@ -504,3 +518,4 @@ public class DataSeeder implements ApplicationRunner {
                                boolean sensitive) {
     }
 }
+

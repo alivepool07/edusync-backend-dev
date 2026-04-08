@@ -1,6 +1,7 @@
 package com.project.edusync.em.model.controller;
 
 import com.project.edusync.em.model.dto.RequestDTO.ExamScheduleRequestDTO;
+import com.project.edusync.em.model.dto.ResponseDTO.EvaluationStructureResponseDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.ExamScheduleResponseDTO;
 import com.project.edusync.em.model.service.ExamScheduleService;
 import jakarta.validation.Valid;
@@ -47,6 +48,11 @@ public class ExamScheduleController {
     @GetMapping("/schedules/{scheduleId}")
     public ResponseEntity<ExamScheduleResponseDTO> getScheduleById(@PathVariable Long scheduleId) {
         return ResponseEntity.ok(examScheduleService.getScheduleById(scheduleId));
+    }
+
+    @GetMapping("/schedules/{scheduleId}/evaluation-structure")
+    public ResponseEntity<EvaluationStructureResponseDTO> getEvaluationStructure(@PathVariable Long scheduleId) {
+        return ResponseEntity.ok(examScheduleService.getEvaluationStructure(scheduleId));
     }
 
     /**

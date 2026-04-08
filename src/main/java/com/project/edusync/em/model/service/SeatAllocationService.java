@@ -3,6 +3,7 @@ package com.project.edusync.em.model.service;
 import com.project.edusync.adm.exception.ResourceNotFoundException;
 import com.project.edusync.adm.model.entity.Room;
 import com.project.edusync.adm.repository.RoomRepository;
+import com.project.edusync.common.config.CacheNames;
 import com.project.edusync.common.exception.BadRequestException;
 import com.project.edusync.em.model.dto.request.BulkSeatAllocationRequestDTO;
 import com.project.edusync.em.model.dto.request.SingleSeatAllocationRequestDTO;
@@ -21,6 +22,8 @@ import com.project.edusync.uis.model.entity.Student;
 import com.project.edusync.uis.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +49,7 @@ public class SeatAllocationService {
     // ════════════════════════════════════════════════════════════════
 
     @Transactional
+    @CacheEvict(value = CacheNames.ROOM_AVAILABILITY, allEntries = true)
     public void generateSeatsForRoom(Room room) {
         if (room.getRowCount() == null || room.getColumnsPerRow() == null) {
             log.info("Skipping seat generation for room {}: dimensions not set", room.getUuid());
@@ -94,6 +98,7 @@ public class SeatAllocationService {
     // ════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheNames.ROOM_AVAILABILITY, key = "#examScheduleId")
     public List<RoomAvailabilityDTO> getAvailableRooms(Long examScheduleId) {
         ExamSchedule schedule = fetchSchedule(examScheduleId);
         LocalDateTime start = deriveStartTime(schedule);
@@ -252,6 +257,7 @@ public class SeatAllocationService {
     // ════════════════════════════════════════════════════════════════
 
     @Transactional
+    @CacheEvict(value = CacheNames.ROOM_AVAILABILITY, key = "#dto.examScheduleId")
     public SeatAllocationResponseDTO allocateSingleSeat(SingleSeatAllocationRequestDTO dto) {
         ExamSchedule schedule = fetchSchedule(dto.getExamScheduleId());
         LocalDateTime start = deriveStartTime(schedule);
@@ -316,6 +322,7 @@ public class SeatAllocationService {
     // ════════════════════════════════════════════════════════════════
 
     @Transactional
+    @CacheEvict(value = CacheNames.ROOM_AVAILABILITY, key = "#dto.examScheduleId")
     public List<SeatAllocationResponseDTO> bulkAllocate(BulkSeatAllocationRequestDTO dto) {
         ExamSchedule schedule = fetchSchedule(dto.getExamScheduleId());
         Room room = roomRepository.findActiveById(dto.getRoomId())
@@ -449,6 +456,7 @@ public class SeatAllocationService {
     // ════════════════════════════════════════════════════════════════
 
     @Transactional
+    @CacheEvict(value = CacheNames.ROOM_AVAILABILITY, allEntries = true)
     public void deleteAllocation(Long allocationId) {
         if (!allocationRepository.existsById(allocationId)) {
             throw new ResourceNotFoundException("SeatAllocation not found with id: " + allocationId);
@@ -457,6 +465,7 @@ public class SeatAllocationService {
     }
 
     @Transactional
+    @CacheEvict(value = CacheNames.ROOM_AVAILABILITY, allEntries = true)
     public void bulkDeleteAllocations(List<Long> allocationIds) {
         if (allocationIds == null || allocationIds.isEmpty()) return;
         allocationRepository.deleteAllByIdInBatch(allocationIds);

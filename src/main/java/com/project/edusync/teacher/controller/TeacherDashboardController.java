@@ -30,19 +30,19 @@ public class TeacherDashboardController {
     private final AuthUtil authUtil;
 
     @GetMapping("/my-classes")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<TeacherMyClassesResponseDto>> getMyClasses() {
         return ResponseEntity.ok(teacherDashboardService.getMyClasses(authUtil.getCurrentUserId()));
     }
 
     @GetMapping("/class-teacher/class")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<TeacherMyClassesResponseDto>> getMyClassTeacherSections() {
         return ResponseEntity.ok(teacherDashboardService.getMyClassTeacherSections(authUtil.getCurrentUserId()));
     }
 
     @GetMapping("/my-students")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Page<TeacherStudentResponseDto>> getMyStudents(
             @RequestParam(required = false) UUID classUuid,
             @RequestParam(required = false) UUID sectionUuid,
@@ -63,7 +63,7 @@ public class TeacherDashboardController {
     }
 
     @GetMapping("/class-teacher/students")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Page<TeacherStudentResponseDto>> getClassTeacherStudents(
             @RequestParam UUID sectionUuid,
             @RequestParam(required = false) String search,
@@ -82,25 +82,25 @@ public class TeacherDashboardController {
     }
 
     @GetMapping("/my-schedule")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TeacherScheduleResponseDto> getMySchedule(@RequestParam(required = false) LocalDate date) {
         return ResponseEntity.ok(teacherDashboardService.getMySchedule(authUtil.getCurrentUserId(), date));
     }
 
     @GetMapping("/dashboard-summary")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TeacherDashboardSummaryResponseDto> getDashboardSummary(@RequestParam(required = false) LocalDate date) {
         return ResponseEntity.ok(teacherDashboardService.getDashboardSummary(authUtil.getCurrentUserId(), date));
     }
 
     @GetMapping("/my-homeroom")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TeacherHomeroomResponseDto> getMyHomeroom(@RequestParam(required = false) LocalDate date) {
         return ResponseEntity.ok(teacherDashboardService.getMyHomeroom(authUtil.getCurrentUserId(), date));
     }
 
     @GetMapping("/attendance/export")
-    @PreAuthorize("hasAnyAuthority('ROLE_TEACHER','ROLE_ADMIN','ROLE_SUPER_ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> exportAttendanceSheet(
             @RequestParam UUID sectionUuid,
             @RequestParam(required = false) LocalDate date

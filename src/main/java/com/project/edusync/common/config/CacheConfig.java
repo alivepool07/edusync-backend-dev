@@ -75,15 +75,40 @@ public class CacheConfig {
                 log.warn("Cache put failed for cache='{}' key='{}'. Continuing without cache write. Cause: {}",
                         cache.getName(), key, exception.getMessage());
             }
+
+            @Override
+            public void handleCacheEvictError(RuntimeException exception, Cache cache, Object key) {
+                log.warn("Cache evict failed for cache='{}' key='{}'. Continuing without cache eviction. Cause: {}",
+                        cache.getName(), key, exception.getMessage());
+            }
+
+            @Override
+            public void handleCacheClearError(RuntimeException exception, Cache cache) {
+                log.warn("Cache clear failed for cache='{}'. Continuing without cache clear. Cause: {}",
+                        cache.getName(), exception.getMessage());
+            }
         };
     }
 
     @Bean
     public RedisCacheManagerBuilderCustomizer teacherDashboardSummaryCacheTtlCustomizer() {
-        return builder -> builder.withCacheConfiguration(
-                "teacherDashboardSummaryV2",
-                redisCacheConfiguration().entryTtl(Duration.ofMinutes(5))
-        );
+        return builder -> builder
+                .withCacheConfiguration(
+                        CacheNames.TEACHER_DASHBOARD_SUMMARY,
+                        redisCacheConfiguration().entryTtl(Duration.ofMinutes(5))
+                )
+                .withCacheConfiguration(
+                        CacheNames.ROOM_AVAILABILITY,
+                        redisCacheConfiguration().entryTtl(Duration.ofMinutes(10))
+                )
+                .withCacheConfiguration(
+                        CacheNames.EXAM_TEMPLATES,
+                        redisCacheConfiguration().entryTtl(Duration.ofMinutes(45))
+                )
+                .withCacheConfiguration(
+                        CacheNames.SCHEDULE_STUDENTS,
+                        redisCacheConfiguration().entryTtl(Duration.ofMinutes(15))
+                );
     }
 }
 

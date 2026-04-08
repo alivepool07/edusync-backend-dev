@@ -5,9 +5,12 @@ import com.project.edusync.adm.model.entity.Section;
 import com.project.edusync.adm.model.entity.Subject;
 import com.project.edusync.adm.model.entity.Timeslot;
 import com.project.edusync.em.model.entity.Exam;
+import com.project.edusync.em.model.entity.snapshot.TemplateSnapshot;
 import com.project.edusync.em.model.enums.SeatSide;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -42,6 +45,14 @@ public class ExamSchedule {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "section_id")
     private Section section;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "template_id")
+    private ExamTemplate template;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "template_snapshot", columnDefinition = "jsonb")
+    private TemplateSnapshot templateSnapshot;
 
     @Column(nullable = false)
     private LocalDate examDate;

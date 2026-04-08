@@ -19,14 +19,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RequiredArgsConstructor
 @Slf4j
 @Component
 public class JWTFilter extends OncePerRequestFilter {
+
+    private static final String BULK_IMPORT_STREAM_PATH = "/bulk-import/stream/";
 
     // 1. We ONLY need AuthUtil. We do not need UserRepository.
     private final AuthUtil authUtil;
@@ -46,8 +48,8 @@ public class JWTFilter extends OncePerRequestFilter {
 
         if (requestTokenHeader != null && requestTokenHeader.startsWith("Bearer ")) {
             token = requestTokenHeader.substring(7); // "Bearer "
-        } else {
-            // Support SSE or other calls that cannot set headers
+        } else if (isQueryTokenSupportedPath(request)) {
+            // Support SSE calls that cannot set Authorization headers
             token = request.getParameter("token");
         }
 
@@ -56,12 +58,11 @@ public class JWTFilter extends OncePerRequestFilter {
             return;
         }
         String username = null;
-        List<GrantedAuthority> authorities = null;
 
         try {
-            // 2. Extract username AND authorities *directly from the token*
+            // Extract username from token. Authorities are resolved from DB-backed UserDetails
+            // to avoid 403s caused by stale tokens after role/permission changes.
             username = authUtil.getUsernameFromToken(token);
-            authorities = authUtil.getAuthoritiesFromToken(token); // NO DATABASE CALL
 
         } catch (ExpiredJwtException e) {
             log.warn("JWT token has expired: {}", e.getMessage());
@@ -78,16 +79,17 @@ public class JWTFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 3. Check if username & authorities were found and context is not set
-        if (username != null && authorities != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        // 3. Check if username was found and context is not set
+        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
             UserDetails userDetails = customUserDetailService.loadUserByUsername(username);
+            Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
 
             // 4. Create the authentication token
             UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                     userDetails,
                     null,      // Credentials (N/A for JWT)
-                    authorities // Authorities (from the token)
+                    authorities // Authorities resolved from UserDetails
             );
 
             // Claims are passed as authentication details so AuthUtil can safely access them later.
@@ -102,5 +104,10 @@ public class JWTFilter extends OncePerRequestFilter {
 
         // 6. Move to the next filter
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isQueryTokenSupportedPath(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return path != null && path.contains(BULK_IMPORT_STREAM_PATH);
     }
 }

@@ -27,6 +27,8 @@ public class ExamResponseDTO {
     private ExamType examType;
     private LocalDate startDate;
     private LocalDate endDate;
+    private UUID templateId;
+    private String templateName;
     private boolean isPublished;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

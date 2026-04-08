@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -43,10 +44,6 @@ public class WebSecurityConfig {
             "/v3/api-docs.yaml",
             "/swagger-ui/**",
             "/swagger-ui.html"
-    };
-
-    private static final String[] MONITORING_WHITELIST = {
-            "/actuator/**" // Essential for health checks and metrics
     };
 
     // SSE stream for bulk import progress.
@@ -96,7 +93,8 @@ public class WebSecurityConfig {
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
 
                         // 3. Actuator Endpoints (Monitoring)
-                        .requestMatchers(MONITORING_WHITELIST).permitAll()
+                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
 
                         // 4. SSE stream for bulk import progress (EventSource cannot send JWT headers)
                         .requestMatchers(Arrays.stream(SSE_WHITELIST)
@@ -106,8 +104,14 @@ public class WebSecurityConfig {
                         // 5. Framework/error paths that should stay public
                         .requestMatchers(apiVersionPath + "/error", "/error", "/favicon.ico").permitAll()
 
-                        // 6. Default: all remaining endpoints require authentication
-//                        .anyRequest().authenticated()
+                        // 6. Signed answer-sheet download (auth is via HMAC token + expiry)
+                        .requestMatchers(HttpMethod.GET, apiVersionPath + "/teacher/answer-sheets/*/file").permitAll()
+
+                        // 7. Teacher dashboard APIs
+                        .requestMatchers(apiVersionPath + "/teacher/**").hasAnyRole("TEACHER", "ADMIN", "SUPER_ADMIN")
+
+                        // 8. Default: all remaining endpoints require authentication
+                        .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(customAuthenticationEntryPoint))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)

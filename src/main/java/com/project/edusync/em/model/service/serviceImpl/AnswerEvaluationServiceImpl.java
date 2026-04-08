@@ -1,0 +1,1014 @@
+package com.project.edusync.em.model.service.serviceImpl;
+
+import com.project.edusync.common.exception.emException.EdusyncException;
+import com.project.edusync.common.security.AuthUtil;
+import com.project.edusync.common.config.CacheNames;
+import com.project.edusync.em.model.dto.RequestDTO.AnnotationRequestDTO;
+import com.project.edusync.em.model.dto.RequestDTO.EvaluationAssignmentCreateRequestDTO;
+import com.project.edusync.em.model.dto.RequestDTO.SaveEvaluationMarksRequestDTO;
+import com.project.edusync.em.model.dto.RequestDTO.SaveQuestionMarkRequestDTO;
+import com.project.edusync.em.model.dto.ResponseDTO.*;
+import com.project.edusync.em.model.entity.*;
+import com.project.edusync.em.model.entity.snapshot.TemplateSnapshot;
+import com.project.edusync.em.model.entity.snapshot.TemplateSnapshotSection;
+import com.project.edusync.em.model.enums.AnnotationType;
+import com.project.edusync.em.model.enums.AnswerSheetStatus;
+import com.project.edusync.em.model.enums.EvaluationAssignmentStatus;
+import com.project.edusync.em.model.enums.EvaluationAuditEventType;
+import com.project.edusync.em.model.enums.EvaluationResultStatus;
+import com.project.edusync.em.model.repository.*;
+import com.project.edusync.em.model.service.AnswerEvaluationService;
+import com.project.edusync.em.model.service.EvaluationAuditService;
+import com.project.edusync.em.model.service.EvaluationDraftStoreService;
+import com.project.edusync.iam.model.entity.User;
+import com.project.edusync.uis.model.entity.Staff;
+import com.project.edusync.uis.model.entity.Student;
+import com.project.edusync.uis.repository.StaffRepository;
+import com.project.edusync.uis.repository.StudentRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
+import com.project.edusync.uis.config.MediaUploadProperties;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
+
+    private static final long PDF_MAX_SIZE_BYTES = 10L * 1024 * 1024;
+    private static final long IMAGE_MAX_SIZE_BYTES_DEFAULT = 5L * 1024 * 1024;
+    private static final String PDF_MAGIC = "%PDF-";
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/jpg", "image/png");
+    private static final Set<String> ALLOWED_METADATA_KEYS = Set.of("color", "strokeWidth", "path");
+
+    private final EvaluationAssignmentRepository assignmentRepository;
+    private final AnswerSheetRepository answerSheetRepository;
+    private final EvaluationResultRepository evaluationResultRepository;
+    private final QuestionMarkRepository questionMarkRepository;
+    private final AnswerSheetAnnotationRepository annotationRepository;
+    private final AnswerSheetImageRepository answerSheetImageRepository;
+    private final ExamScheduleRepository examScheduleRepository;
+    private final StudentRepository studentRepository;
+    private final StaffRepository staffRepository;
+    private final AuthUtil authUtil;
+    private final EvaluationAuditService evaluationAuditService;
+    private final EvaluationDraftStoreService evaluationDraftStoreService;
+
+    @Value("${app.evaluation.storage.private-dir:uploads-private/answer-sheets}")
+    private String privateStorageDir;
+
+    @Value("${app.evaluation.upload.max-per-minute:20}")
+    private int maxUploadsPerMinute;
+
+    @Value("${app.evaluation.image.max-size-bytes:5242880}")
+    private long maxImageSizeBytes;
+
+    @Value("${app.evaluation.file-signing-secret:${app.jwt.secret-key}}")
+    private String fileSigningSecret;
+
+    @Value("${api.url:/api/v1}")
+    private String apiUrl;
+
+    private Cloudinary cloudinary;
+    private final MediaUploadProperties mediaUploadProperties;
+
+    @jakarta.annotation.PostConstruct
+    private void initCloudinary() {
+        MediaUploadProperties.Cloudinary cfg = mediaUploadProperties.getCloudinary();
+        this.cloudinary = new Cloudinary(ObjectUtils.asMap(
+                "cloud_name", cfg.getCloudName(),
+                "api_key", cfg.getApiKey(),
+                "api_secret", cfg.getApiSecret()
+        ));
+    }
+
+    private final Map<Long, Deque<Long>> uploadWindow = new ConcurrentHashMap<>();
+    private final Map<Long, Object> draftSaveLocks = new ConcurrentHashMap<>();
+
+    @Override
+    public EvaluationAssignmentResponseDTO assignTeacher(EvaluationAssignmentCreateRequestDTO request) {
+        requireAdmin();
+        ExamSchedule schedule = getSchedule(request.getExamScheduleId());
+        Staff teacher = staffRepository.findByUuid(request.getTeacherId())
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Teacher not found", HttpStatus.NOT_FOUND));
+
+        EvaluationAssignment assignment = assignmentRepository.findByExamScheduleIdAndTeacherId(schedule.getId(), teacher.getId())
+                .orElseGet(EvaluationAssignment::new);
+        assignment.setExamSchedule(schedule);
+        assignment.setTeacher(teacher);
+        assignment.setDueDate(request.getDueDate());
+        assignment.setStatus(EvaluationAssignmentStatus.ASSIGNED);
+
+        EvaluationAssignment saved = assignmentRepository.save(assignment);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("assignedByUserId", authUtil.getCurrentUserId());
+        metadata.put("scheduleId", schedule.getId());
+        metadata.put("teacherId", teacher.getId());
+        metadata.put("status", saved.getStatus().name());
+        metadata.put("dueDate", saved.getDueDate() != null ? saved.getDueDate().toString() : null);
+        evaluationAuditService.record(EvaluationAuditEventType.ASSIGNMENT_UPSERTED, null, saved, null, null, metadata);
+        log.info("Evaluation assignment created/updated: scheduleId={}, teacherId={}", schedule.getId(), teacher.getId());
+        return toAssignmentResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EvaluationAssignmentResponseDTO> getAssignmentsForAdmin(UUID teacherIdFilter) {
+        requireAdmin();
+        Long teacherId = null;
+        if (teacherIdFilter != null) {
+            teacherId = staffRepository.findByUuid(teacherIdFilter)
+                    .orElseThrow(() -> new EdusyncException("EVAL-404", "Teacher not found", HttpStatus.NOT_FOUND))
+                    .getId();
+        }
+        return assignmentRepository.findAllWithSchedule(teacherId).stream()
+                .map(this::toAssignmentResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EvaluationAssignmentResponseDTO> getAssignmentsForCurrentTeacher() {
+        Long teacherId = getCurrentTeacher().getId();
+        return assignmentRepository.findAllByTeacherIdWithSchedule(teacherId).stream()
+                .map(this::toAssignmentResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    @Cacheable(value = CacheNames.SCHEDULE_STUDENTS,
+            key = "#scheduleId + ':' + T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName()")
+    public List<TeacherEvaluationStudentResponseDTO> getStudentsForAssignedSchedule(Long scheduleId) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+        ExamSchedule schedule = getSchedule(scheduleId);
+
+        List<Student> students = schedule.getSection() != null
+                ? studentRepository.findBySectionIdOrderByRollNoAsc(schedule.getSection().getId())
+                : studentRepository.findBySection_AcademicClass_IdOrderByRollNoAsc(schedule.getAcademicClass().getId());
+
+        Map<Long, AnswerSheet> answerSheetByStudentId = answerSheetRepository.findByExamScheduleId(scheduleId).stream()
+                .collect(Collectors.toMap(a -> a.getStudent().getId(), a -> a, (a, b) -> a));
+
+        return students.stream()
+                .map(student -> toTeacherEvaluationStudentResponse(student, answerSheetByStudentId.get(student.getId())))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TeacherEvaluationStudentResponseDTO> getStudentsForAssignedSchedule(Long scheduleId, int page, int size) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+        ExamSchedule schedule = getSchedule(scheduleId);
+
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(Math.min(size, 100), 1);
+        PageRequest pageable = PageRequest.of(safePage, safeSize);
+
+        Page<Student> students = schedule.getSection() != null
+                ? studentRepository.findBySectionIdOrderByRollNoAsc(schedule.getSection().getId(), pageable)
+                : studentRepository.findBySection_AcademicClass_IdOrderByRollNoAsc(schedule.getAcademicClass().getId(), pageable);
+
+        Map<Long, AnswerSheet> answerSheetByStudentId = answerSheetRepository.findByExamScheduleId(scheduleId).stream()
+                .collect(Collectors.toMap(a -> a.getStudent().getId(), a -> a, (a, b) -> a));
+
+        List<TeacherEvaluationStudentResponseDTO> content = students.getContent().stream()
+                .map(student -> toTeacherEvaluationStudentResponse(student, answerSheetByStudentId.get(student.getId())))
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(content, pageable, students.getTotalElements());
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public AnswerSheetUploadResponseDTO uploadAnswerSheet(Long scheduleId, UUID studentId, MultipartFile file) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+        enforceUploadRateLimit(teacher.getId());
+
+        ExamSchedule schedule = getSchedule(scheduleId);
+        Student student = studentRepository.findByUuid(studentId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Student not found", HttpStatus.NOT_FOUND));
+
+        if (schedule.getSection() != null && !Objects.equals(student.getSection().getId(), schedule.getSection().getId())) {
+            throw new EdusyncException("EVAL-400", "Student does not belong to assigned section", HttpStatus.BAD_REQUEST);
+        }
+        if (schedule.getSection() == null && !Objects.equals(student.getSection().getAcademicClass().getId(), schedule.getAcademicClass().getId())) {
+            throw new EdusyncException("EVAL-400", "Student does not belong to assigned class", HttpStatus.BAD_REQUEST);
+        }
+
+        validatePdfUpload(file);
+
+        String fileUrl;
+        try {
+            MediaUploadProperties.Cloudinary cfg = mediaUploadProperties.getCloudinary();
+            String folder = cfg.getFolder() != null ? cfg.getFolder() : "answer-sheets";
+            
+            String originalName = file.getOriginalFilename();
+            String nameWithoutExtension = originalName != null && originalName.contains(".") 
+                ? originalName.substring(0, originalName.lastIndexOf('.')) 
+                : (originalName != null ? originalName : "file");
+
+            String publicId = folder + "/" + UUID.randomUUID() + "_" + nameWithoutExtension;
+            
+            var uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
+                    "public_id", publicId,
+                    "resource_type", "raw",
+                    "flags", "attachment" 
+            ));
+            fileUrl = (String) uploadResult.get("secure_url");
+        } catch (Exception e) {
+            log.error("Cloudinary upload failed", e);
+            throw new EdusyncException("EVAL-500", "Failed to upload answer sheet to storage", HttpStatus.INTERNAL_SERVER_ERROR, e);
+        }
+
+        AnswerSheet answerSheet = answerSheetRepository.findByExamScheduleIdAndStudentId(scheduleId, student.getId())
+                .orElseGet(AnswerSheet::new);
+        answerSheet.setExamSchedule(schedule);
+        answerSheet.setStudent(student);
+        answerSheet.setUploadedByTeacher(teacher);
+        answerSheet.setFileUrl(fileUrl);
+        answerSheet.setStatus(AnswerSheetStatus.UPLOADED);
+
+        AnswerSheet saved = answerSheetRepository.save(answerSheet);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("scheduleId", schedule.getId());
+        metadata.put("studentId", student.getId());
+        metadata.put("answerSheetStatus", saved.getStatus().name());
+        evaluationAuditService.record(EvaluationAuditEventType.ANSWER_SHEET_UPLOADED, teacher, null, saved, null, metadata);
+        String signedUrl = generateSignedFileUrl(saved.getId());
+        log.info("Answer sheet uploaded: answerSheetId={}, scheduleId={}, studentId={}", saved.getId(), scheduleId, student.getId());
+
+        return AnswerSheetUploadResponseDTO.builder()
+                .answerSheetId(saved.getId())
+                .fileUrl(signedUrl)
+                .status(saved.getStatus())
+                .createdAt(saved.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public AnswerSheetImageGroupResponseDTO uploadAnswerSheetImages(Long scheduleId,
+                                                                     UUID studentId,
+                                                                     List<MultipartFile> files,
+                                                                     List<Integer> pageNumbers) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+        enforceUploadRateLimit(teacher.getId());
+
+        if (files == null || files.isEmpty()) {
+            throw new EdusyncException("EVAL-400", "At least one image is required", HttpStatus.BAD_REQUEST);
+        }
+
+        ExamSchedule schedule = getSchedule(scheduleId);
+        Student student = getValidatedStudentForSchedule(studentId, schedule);
+        List<Integer> resolvedPages = resolvePageNumbers(pageNumbers, files.size());
+
+        AnswerSheet answerSheet = answerSheetRepository.findByExamScheduleIdAndStudentId(scheduleId, student.getId())
+                .orElseGet(AnswerSheet::new);
+        if (answerSheet.getId() != null && !Objects.equals(answerSheet.getUploadedByTeacher().getId(), teacher.getId())) {
+            throw new EdusyncException("EVAL-403", "Only the assigned uploader can update these images", HttpStatus.FORBIDDEN);
+        }
+
+        answerSheet.setExamSchedule(schedule);
+        answerSheet.setStudent(student);
+        answerSheet.setUploadedByTeacher(teacher);
+        answerSheet.setStatus(AnswerSheetStatus.UPLOADED);
+        AnswerSheet savedSheet = answerSheetRepository.save(answerSheet);
+
+        Map<Integer, AnswerSheetImage> existingByPage = answerSheetImageRepository
+                .findByAnswerSheetIdOrderByPageNumberAsc(savedSheet.getId())
+                .stream()
+                .collect(Collectors.toMap(AnswerSheetImage::getPageNumber, image -> image, (left, right) -> left, LinkedHashMap::new));
+
+        List<AnswerSheetImage> toSave = new ArrayList<>();
+        for (int i = 0; i < files.size(); i++) {
+            MultipartFile file = files.get(i);
+            Integer pageNumber = resolvedPages.get(i);
+            validateImageUpload(file, pageNumber);
+            String imageUrl = uploadImageToCloudinary(file, savedSheet.getId(), pageNumber);
+
+            AnswerSheetImage image = existingByPage.getOrDefault(pageNumber, AnswerSheetImage.builder()
+                    .answerSheet(savedSheet)
+                    .pageNumber(pageNumber)
+                    .build());
+            image.setImageUrl(imageUrl);
+            toSave.add(image);
+        }
+
+        answerSheetImageRepository.saveAll(toSave);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("scheduleId", scheduleId);
+        metadata.put("studentId", student.getId());
+        metadata.put("uploadedPages", resolvedPages.size());
+        evaluationAuditService.record(EvaluationAuditEventType.ANSWER_SHEET_UPLOADED, teacher, null, savedSheet, null, metadata);
+        return toImageGroupResponse(savedSheet);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AnswerSheetImageGroupResponseDTO getAnswerSheetImages(UUID studentId, Long scheduleId) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+
+        Student student = studentRepository.findByUuid(studentId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Student not found", HttpStatus.NOT_FOUND));
+        AnswerSheet answerSheet = answerSheetRepository.findByExamScheduleIdAndStudentId(scheduleId, student.getId())
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Answer sheet images not found", HttpStatus.NOT_FOUND));
+        return toImageGroupResponse(answerSheet);
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public AnswerSheetImageGroupResponseDTO completeImageUpload(Long scheduleId, UUID studentId) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+
+        Student student = studentRepository.findByUuid(studentId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Student not found", HttpStatus.NOT_FOUND));
+        AnswerSheet answerSheet = answerSheetRepository.findByExamScheduleIdAndStudentId(scheduleId, student.getId())
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Answer sheet not found", HttpStatus.NOT_FOUND));
+
+        if (!Objects.equals(answerSheet.getUploadedByTeacher().getId(), teacher.getId())) {
+            throw new EdusyncException("EVAL-403", "Only the assigned uploader can mark upload complete", HttpStatus.FORBIDDEN);
+        }
+        long imageCount = answerSheetImageRepository.findByAnswerSheetIdOrderByPageNumberAsc(answerSheet.getId()).size();
+        if (imageCount == 0) {
+            throw new EdusyncException("EVAL-400", "Cannot complete upload with no pages", HttpStatus.BAD_REQUEST);
+        }
+
+        answerSheet.setStatus(AnswerSheetStatus.COMPLETE);
+        AnswerSheet saved = answerSheetRepository.save(answerSheet);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("scheduleId", scheduleId);
+        metadata.put("studentId", student.getId());
+        metadata.put("uploadedPages", imageCount);
+        evaluationAuditService.record(EvaluationAuditEventType.ANSWER_SHEET_UPLOAD_COMPLETED, teacher, null, saved, null, metadata);
+        return toImageGroupResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AnswerEvaluationStructureResponseDTO getEvaluationStructure(Long answerSheetId) {
+        Staff teacher = getCurrentTeacher();
+        AnswerSheet answerSheet = getAnswerSheetForTeacher(answerSheetId, teacher.getId());
+
+        TemplateSnapshot snapshot = Optional.ofNullable(answerSheet.getExamSchedule().getTemplateSnapshot())
+                .orElseThrow(() -> new EdusyncException("EVAL-400", "No template snapshot found for schedule", HttpStatus.BAD_REQUEST));
+
+        EvaluationResult result = evaluationResultRepository.findByAnswerSheetId(answerSheetId).orElse(null);
+        Map<String, QuestionMark> existingMarkMap = new HashMap<>();
+        if (result != null) {
+            questionMarkRepository.findByEvaluationResultIdOrderBySectionNameAscQuestionNumberAsc(result.getId())
+                    .forEach(mark -> existingMarkMap.put(mark.getSectionName() + "#" + mark.getQuestionNumber(), mark));
+        } else {
+            for (SaveQuestionMarkRequestDTO draftMark : evaluationDraftStoreService.getDraft(answerSheetId)) {
+                QuestionMark mark = QuestionMark.builder()
+                        .sectionName(draftMark.getSectionName())
+                        .questionNumber(draftMark.getQuestionNumber())
+                        .marksObtained(draftMark.getMarksObtained())
+                        .annotationType(draftMark.getAnnotationType() == null ? AnnotationType.NONE : draftMark.getAnnotationType())
+                        .build();
+                existingMarkMap.put(mark.getSectionName().trim() + "#" + mark.getQuestionNumber(), mark);
+            }
+        }
+
+        List<AnswerEvaluationStructureResponseDTO.SectionDTO> sections = new ArrayList<>();
+        int totalQuestions = 0;
+        BigDecimal totalMax = BigDecimal.ZERO;
+
+        List<TemplateSnapshotSection> orderedSections = snapshot.getSections().stream()
+                .sorted(Comparator.comparing(TemplateSnapshotSection::getSectionOrder))
+                .collect(Collectors.toList());
+
+        for (TemplateSnapshotSection section : orderedSections) {
+            List<AnswerEvaluationStructureResponseDTO.QuestionDTO> questions = new ArrayList<>();
+            BigDecimal max = BigDecimal.valueOf(section.getMarksPerQuestion());
+            for (int q = 1; q <= section.getQuestionCount(); q++) {
+                QuestionMark mark = existingMarkMap.get(section.getName() + "#" + q);
+                questions.add(AnswerEvaluationStructureResponseDTO.QuestionDTO.builder()
+                        .questionNumber(q)
+                        .maxMarks(max)
+                        .marksObtained(mark != null ? mark.getMarksObtained() : null)
+                        .annotationType(mark != null ? mark.getAnnotationType() : AnnotationType.NONE)
+                        .build());
+                totalQuestions++;
+                totalMax = totalMax.add(max);
+            }
+            sections.add(AnswerEvaluationStructureResponseDTO.SectionDTO.builder()
+                    .sectionName(section.getName())
+                    .questions(questions)
+                    .build());
+        }
+
+        return AnswerEvaluationStructureResponseDTO.builder()
+                .answerSheetId(answerSheet.getId())
+                .totalQuestions(totalQuestions)
+                .totalMaxMarks(totalMax.intValue())
+                .resultStatus(result != null ? result.getStatus().name() : EvaluationResultStatus.DRAFT.name())
+                .sections(sections)
+                .build();
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public EvaluationResultResponseDTO saveDraftMarks(Long answerSheetId, SaveEvaluationMarksRequestDTO requestDTO) {
+        Object lock = draftSaveLocks.computeIfAbsent(answerSheetId, key -> new Object());
+        synchronized (lock) {
+            Staff teacher = getCurrentTeacher();
+            AnswerSheet answerSheet = getAnswerSheetForTeacher(answerSheetId, teacher.getId());
+            List<SaveQuestionMarkRequestDTO> normalizedMarks = normalizeQuestionMarks(requestDTO.getQuestionMarks());
+            evaluationDraftStoreService.saveDraft(answerSheetId, normalizedMarks);
+
+            EvaluationResult result = evaluationResultRepository.findByAnswerSheetId(answerSheetId)
+                    .orElseGet(() -> EvaluationResult.builder()
+                            .answerSheet(answerSheet)
+                            .totalMarks(BigDecimal.ZERO)
+                            .status(EvaluationResultStatus.DRAFT)
+                            .evaluatedAt(LocalDateTime.now())
+                            .build());
+
+            if (result.getStatus() == EvaluationResultStatus.FINAL) {
+                throw new EdusyncException("EVAL-409", "Finalized evaluation cannot be modified", HttpStatus.CONFLICT);
+            }
+
+            Map<String, BigDecimal> maxByQuestionKey = buildMaxMarksMap(answerSheet.getExamSchedule().getTemplateSnapshot());
+
+            if (result.getId() == null) {
+                try {
+                    result = evaluationResultRepository.saveAndFlush(result);
+                } catch (DataIntegrityViolationException ex) {
+                    // Another request inserted the row first; recover and continue.
+                    result = evaluationResultRepository.findByAnswerSheetId(answerSheetId)
+                            .orElseThrow(() -> ex);
+                }
+            }
+
+            List<QuestionMark> existingMarks = questionMarkRepository
+                    .findByEvaluationResultIdOrderBySectionNameAscQuestionNumberAsc(result.getId());
+            Map<String, QuestionMark> existingMarkByKey = existingMarks.stream()
+                    .collect(Collectors.toMap(
+                            mark -> buildQuestionKey(mark.getSectionName(), mark.getQuestionNumber()),
+                            mark -> mark,
+                            (left, right) -> left,
+                            LinkedHashMap::new
+                    ));
+
+            BigDecimal total = BigDecimal.ZERO;
+            for (SaveQuestionMarkRequestDTO markRequest : normalizedMarks) {
+                String key = buildQuestionKey(markRequest.getSectionName(), markRequest.getQuestionNumber());
+                BigDecimal maxMarks = maxByQuestionKey.get(key);
+                if (maxMarks == null) {
+                    throw new EdusyncException("EVAL-400", "Invalid section/question combination: " + key, HttpStatus.BAD_REQUEST);
+                }
+                if (markRequest.getMarksObtained().compareTo(BigDecimal.ZERO) < 0 || markRequest.getMarksObtained().compareTo(maxMarks) > 0) {
+                    throw new EdusyncException("EVAL-400", "marksObtained out of range for " + key, HttpStatus.BAD_REQUEST);
+                }
+
+                QuestionMark questionMark = existingMarkByKey.remove(key);
+                if (questionMark == null) {
+                    String normalizedSection = markRequest.getSectionName().trim();
+                    questionMark = questionMarkRepository
+                            .findByEvaluationResultIdAndSectionNameAndQuestionNumber(result.getId(), normalizedSection, markRequest.getQuestionNumber())
+                            .orElse(null);
+                    if (questionMark == null) {
+                        questionMark = QuestionMark.builder()
+                                .evaluationResult(result)
+                                .sectionName(normalizedSection)
+                                .questionNumber(markRequest.getQuestionNumber())
+                                .build();
+                    }
+                }
+                questionMark.setMarksObtained(markRequest.getMarksObtained());
+                questionMark.setMaxMarks(maxMarks);
+                questionMark.setAnnotationType(markRequest.getAnnotationType() == null ? AnnotationType.NONE : markRequest.getAnnotationType());
+                try {
+                    questionMarkRepository.saveAndFlush(questionMark);
+                } catch (DataIntegrityViolationException ex) {
+                    // Last-chance recovery for race on unique key.
+                    QuestionMark recovered = questionMarkRepository
+                            .findByEvaluationResultIdAndSectionNameAndQuestionNumber(
+                                    result.getId(),
+                                    markRequest.getSectionName().trim(),
+                                    markRequest.getQuestionNumber())
+                            .orElseThrow(() -> ex);
+                    recovered.setMarksObtained(markRequest.getMarksObtained());
+                    recovered.setMaxMarks(maxMarks);
+                    recovered.setAnnotationType(markRequest.getAnnotationType() == null ? AnnotationType.NONE : markRequest.getAnnotationType());
+                    questionMarkRepository.save(recovered);
+                }
+                total = total.add(markRequest.getMarksObtained());
+            }
+
+            if (!existingMarkByKey.isEmpty()) {
+                questionMarkRepository.deleteAllInBatch(existingMarkByKey.values());
+            }
+
+            result.setTotalMarks(total);
+            result.setStatus(EvaluationResultStatus.DRAFT);
+            result.setEvaluatedAt(LocalDateTime.now());
+            EvaluationResult saved = evaluationResultRepository.save(result);
+
+            answerSheet.setStatus(AnswerSheetStatus.DRAFT);
+            answerSheetRepository.save(answerSheet);
+            markAssignmentInProgress(answerSheet.getExamSchedule().getId(), teacher.getId());
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("totalMarks", saved.getTotalMarks());
+            metadata.put("questionCount", normalizedMarks.size());
+            metadata.put("status", saved.getStatus().name());
+            evaluationAuditService.record(EvaluationAuditEventType.DRAFT_MARKS_SAVED, teacher, null, answerSheet, saved, metadata);
+            log.info("Draft marks saved: answerSheetId={}, totalMarks={}", answerSheetId, total);
+
+            return toEvaluationResultResponse(saved);
+        }
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public EvaluationResultResponseDTO publishMarks(Long answerSheetId) {
+        Staff teacher = getCurrentTeacher();
+        AnswerSheet answerSheet = getAnswerSheetForTeacher(answerSheetId, teacher.getId());
+
+        EvaluationResult result = evaluationResultRepository.findByAnswerSheetId(answerSheetId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "No draft marks found for answer sheet", HttpStatus.NOT_FOUND));
+
+        if (result.getStatus() == EvaluationResultStatus.FINAL) {
+            return toEvaluationResultResponse(result);
+        }
+
+        result.setStatus(EvaluationResultStatus.FINAL);
+        result.setEvaluatedAt(LocalDateTime.now());
+        EvaluationResult saved = evaluationResultRepository.save(result);
+
+        answerSheet.setStatus(AnswerSheetStatus.FINAL);
+        answerSheetRepository.save(answerSheet);
+        markAssignmentCompleted(answerSheet.getExamSchedule().getId(), teacher.getId());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("totalMarks", saved.getTotalMarks());
+        metadata.put("status", saved.getStatus().name());
+        evaluationAuditService.record(EvaluationAuditEventType.MARKS_PUBLISHED, teacher, null, answerSheet, saved, metadata);
+        evaluationDraftStoreService.deleteDraft(answerSheetId);
+        log.info("Evaluation published: answerSheetId={}, totalMarks={}", answerSheetId, saved.getTotalMarks());
+
+        return toEvaluationResultResponse(saved);
+    }
+
+    @Override
+    public AnnotationResponseDTO createAnnotation(Long answerSheetId, AnnotationRequestDTO requestDTO) {
+        Staff teacher = getCurrentTeacher();
+        AnswerSheet answerSheet = getAnswerSheetForTeacher(answerSheetId, teacher.getId());
+        validateAnnotation(requestDTO);
+
+        AnswerSheetAnnotation annotation = AnswerSheetAnnotation.builder()
+                .answerSheet(answerSheet)
+                .pageNumber(requestDTO.getPageNumber())
+                .x(requestDTO.getX())
+                .y(requestDTO.getY())
+                .type(requestDTO.getType())
+                .metadata(sanitizeMetadata(requestDTO.getMetadata()))
+                .build();
+
+        AnswerSheetAnnotation saved = annotationRepository.save(annotation);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("annotationId", saved.getId());
+        metadata.put("pageNumber", saved.getPageNumber());
+        metadata.put("type", saved.getType().name());
+        evaluationAuditService.record(EvaluationAuditEventType.ANNOTATION_CREATED, teacher, null, answerSheet, null, metadata);
+        return toAnnotationResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AnnotationResponseDTO> getAnnotations(Long answerSheetId) {
+        Staff teacher = getCurrentTeacher();
+        getAnswerSheetForTeacher(answerSheetId, teacher.getId());
+        return annotationRepository.findByAnswerSheetIdOrderByPageNumberAscIdAsc(answerSheetId).stream()
+                .map(this::toAnnotationResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String generateSignedFileUrl(Long answerSheetId) {
+        Staff teacher = getCurrentTeacher();
+        getAnswerSheetForTeacher(answerSheetId, teacher.getId());
+
+        long expires = System.currentTimeMillis() + (10 * 60 * 1000);
+        String signature = sign(answerSheetId, expires);
+        return apiUrl + "/teacher/answer-sheets/" + answerSheetId + "/file?token=" + signature + "&expires=" + expires;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Resource loadSignedAnswerSheet(Long answerSheetId, String token, long expires) {
+        if (System.currentTimeMillis() > expires) {
+            throw new EdusyncException("EVAL-401", "Signed URL expired", HttpStatus.UNAUTHORIZED);
+        }
+        String expected = sign(answerSheetId, expires);
+        if (!constantTimeEquals(expected, token)) {
+            throw new EdusyncException("EVAL-401", "Invalid signed URL token", HttpStatus.UNAUTHORIZED);
+        }
+
+        AnswerSheet answerSheet = answerSheetRepository.findById(answerSheetId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Answer sheet not found", HttpStatus.NOT_FOUND));
+
+        try {
+            Resource resource;
+            if (answerSheet.getFileUrl() != null && answerSheet.getFileUrl().startsWith("http")) {
+                // Cloudinary URL
+                resource = new UrlResource(answerSheet.getFileUrl());
+            } else {
+                // Legacy local storage
+                Path filePath = ensureStorageRoot().resolve(answerSheet.getFileUrl()).normalize();
+                resource = new UrlResource(filePath.toUri());
+            }
+            
+            if (!resource.exists() || !resource.isReadable()) {
+                throw new EdusyncException("EVAL-404", "Answer sheet file not found", HttpStatus.NOT_FOUND);
+            }
+            return resource;
+        } catch (MalformedURLException e) {
+            throw new EdusyncException("EVAL-500", "Failed to read answer sheet file", HttpStatus.INTERNAL_SERVER_ERROR, e);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<AnswerSheetUploadResponseDTO> getAnswerSheetsForAssignedSchedule(Long scheduleId, int page, int size) {
+        Staff teacher = getCurrentTeacher();
+        ensureTeacherAssigned(scheduleId, teacher.getId());
+
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(Math.min(size, 100), 1);
+        Page<AnswerSheet> sheets = answerSheetRepository.findByScheduleId(scheduleId, PageRequest.of(safePage, safeSize));
+
+        List<AnswerSheetUploadResponseDTO> content = sheets.getContent().stream()
+                .map(sheet -> AnswerSheetUploadResponseDTO.builder()
+                        .answerSheetId(sheet.getId())
+                        .fileUrl(apiUrl + "/teacher/answer-sheets/" + sheet.getId() + "/signed-url")
+                        .status(sheet.getStatus())
+                        .createdAt(sheet.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(content, sheets.getPageable(), sheets.getTotalElements());
+    }
+
+    private void validatePdfUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new EdusyncException("EVAL-400", "PDF file is required", HttpStatus.BAD_REQUEST);
+        }
+        if (file.getSize() > PDF_MAX_SIZE_BYTES) {
+            throw new EdusyncException("EVAL-400", "File exceeds max size of 10MB", HttpStatus.BAD_REQUEST);
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !(contentType.equalsIgnoreCase("application/pdf") || contentType.equalsIgnoreCase("application/x-pdf"))) {
+            throw new EdusyncException("EVAL-400", "Only PDF uploads are allowed", HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            byte[] header = file.getBytes();
+            if (header.length < 5) {
+                throw new EdusyncException("EVAL-400", "Invalid PDF file", HttpStatus.BAD_REQUEST);
+            }
+            String magic = new String(header, 0, 5, StandardCharsets.US_ASCII);
+            if (!PDF_MAGIC.equals(magic)) {
+                throw new EdusyncException("EVAL-400", "Invalid PDF signature", HttpStatus.BAD_REQUEST);
+            }
+        } catch (IOException e) {
+            throw new EdusyncException("EVAL-400", "Unable to validate file contents", HttpStatus.BAD_REQUEST, e);
+        }
+
+        String originalName = file.getOriginalFilename();
+        if (StringUtils.hasText(originalName) && originalName.toLowerCase(Locale.ROOT).endsWith(".php")) {
+            throw new EdusyncException("EVAL-400", "Invalid file name", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void validateImageUpload(MultipartFile file, Integer pageNumber) {
+        if (file == null || file.isEmpty()) {
+            throw new EdusyncException("EVAL-400", "Image file is required", HttpStatus.BAD_REQUEST);
+        }
+        if (pageNumber == null || pageNumber < 1) {
+            throw new EdusyncException("EVAL-400", "pageNumber must be >= 1", HttpStatus.BAD_REQUEST);
+        }
+        if (file.getSize() > maxImageSizeBytes) {
+            throw new EdusyncException("EVAL-400", "Image exceeds configured max size", HttpStatus.BAD_REQUEST);
+        }
+
+        String contentType = file.getContentType();
+        String normalized = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (!ALLOWED_IMAGE_TYPES.contains(normalized)) {
+            throw new EdusyncException("EVAL-400", "Only jpeg/png image uploads are allowed", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private String uploadImageToCloudinary(MultipartFile file, Long answerSheetId, Integer pageNumber) {
+        try {
+            MediaUploadProperties.Cloudinary cfg = mediaUploadProperties.getCloudinary();
+            String folder = cfg.getFolder() != null ? cfg.getFolder() : "answer-sheets";
+            String publicId = folder + "/images/" + answerSheetId + "/page-" + pageNumber + "-" + UUID.randomUUID();
+            Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
+                    "public_id", publicId,
+                    "resource_type", "image",
+                    "overwrite", true
+            ));
+            return (String) uploadResult.get("secure_url");
+        } catch (Exception e) {
+            log.error("Cloudinary image upload failed for answerSheetId={}, page={}", answerSheetId, pageNumber, e);
+            throw new EdusyncException("EVAL-500", "Failed to upload answer sheet image", HttpStatus.INTERNAL_SERVER_ERROR, e);
+        }
+    }
+
+    private Student getValidatedStudentForSchedule(UUID studentUuid, ExamSchedule schedule) {
+        Student student = studentRepository.findByUuid(studentUuid)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Student not found", HttpStatus.NOT_FOUND));
+
+        if (schedule.getSection() != null && !Objects.equals(student.getSection().getId(), schedule.getSection().getId())) {
+            throw new EdusyncException("EVAL-400", "Student does not belong to assigned section", HttpStatus.BAD_REQUEST);
+        }
+        if (schedule.getSection() == null && !Objects.equals(student.getSection().getAcademicClass().getId(), schedule.getAcademicClass().getId())) {
+            throw new EdusyncException("EVAL-400", "Student does not belong to assigned class", HttpStatus.BAD_REQUEST);
+        }
+        return student;
+    }
+
+    private List<Integer> resolvePageNumbers(List<Integer> pageNumbers, int fileCount) {
+        if (pageNumbers == null || pageNumbers.isEmpty()) {
+            List<Integer> generated = new ArrayList<>();
+            for (int i = 1; i <= fileCount; i++) {
+                generated.add(i);
+            }
+            return generated;
+        }
+        if (pageNumbers.size() != fileCount) {
+            throw new EdusyncException("EVAL-400", "pageNumbers count must match files count", HttpStatus.BAD_REQUEST);
+        }
+
+        Set<Integer> uniquePages = new HashSet<>();
+        for (Integer pageNumber : pageNumbers) {
+            if (pageNumber == null || pageNumber < 1) {
+                throw new EdusyncException("EVAL-400", "pageNumbers must be >= 1", HttpStatus.BAD_REQUEST);
+            }
+            if (!uniquePages.add(pageNumber)) {
+                throw new EdusyncException("EVAL-400", "Duplicate pageNumber in upload request", HttpStatus.BAD_REQUEST);
+            }
+        }
+        return pageNumbers;
+    }
+
+    private void enforceUploadRateLimit(Long teacherId) {
+        long now = System.currentTimeMillis();
+        Deque<Long> window = uploadWindow.computeIfAbsent(teacherId, t -> new ArrayDeque<>());
+        synchronized (window) {
+            while (!window.isEmpty() && now - window.peekFirst() > 60_000) {
+                window.pollFirst();
+            }
+            if (window.size() >= maxUploadsPerMinute) {
+                throw new EdusyncException("EVAL-429", "Upload rate limit exceeded. Try again shortly.", HttpStatus.TOO_MANY_REQUESTS);
+            }
+            window.addLast(now);
+        }
+    }
+
+    private Path ensureStorageRoot() {
+        Path root = Paths.get(privateStorageDir).toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(root);
+        } catch (IOException e) {
+            throw new EdusyncException("EVAL-500", "Unable to initialize private storage", HttpStatus.INTERNAL_SERVER_ERROR, e);
+        }
+        return root;
+    }
+
+    private Staff getCurrentTeacher() {
+        Long userId = authUtil.getCurrentUserId();
+        return staffRepository.findByUserProfile_User_Id(userId)
+                .orElseThrow(() -> new EdusyncException("EVAL-403", "Current user is not mapped to teacher/staff", HttpStatus.FORBIDDEN));
+    }
+
+    private void ensureTeacherAssigned(Long scheduleId, Long teacherId) {
+        if (!assignmentRepository.existsByExamScheduleIdAndTeacherId(scheduleId, teacherId)) {
+            throw new EdusyncException("EVAL-403", "Teacher is not assigned to this schedule", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private AnswerSheet getAnswerSheetForTeacher(Long answerSheetId, Long teacherId) {
+        AnswerSheet answerSheet = answerSheetRepository.findByIdWithScheduleAndStudent(answerSheetId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Answer sheet not found", HttpStatus.NOT_FOUND));
+        ensureTeacherAssigned(answerSheet.getExamSchedule().getId(), teacherId);
+        return answerSheet;
+    }
+
+    private ExamSchedule getSchedule(Long scheduleId) {
+        return examScheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new EdusyncException("EM-404", "Exam Schedule not found", HttpStatus.NOT_FOUND));
+    }
+
+    private void requireAdmin() {
+        User currentUser = authUtil.getCurrentUser();
+        Set<String> authorities = currentUser.getAuthorities().stream()
+                .map(Object::toString)
+                .collect(Collectors.toSet());
+        if (!(authorities.contains("ROLE_ADMIN") || authorities.contains("ROLE_SUPER_ADMIN") || authorities.contains("ROLE_SCHOOL_ADMIN"))) {
+            throw new EdusyncException("EVAL-403", "Admin privileges required", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private EvaluationAssignmentResponseDTO toAssignmentResponse(EvaluationAssignment assignment) {
+        String teacherName = assignment.getTeacher().getUserProfile() != null
+                ? (assignment.getTeacher().getUserProfile().getFirstName() + " " + assignment.getTeacher().getUserProfile().getLastName()).trim()
+                : assignment.getTeacher().getEmployeeId();
+        return EvaluationAssignmentResponseDTO.builder()
+                .assignmentId(assignment.getId())
+                .examScheduleId(assignment.getExamSchedule().getId())
+                .examUuid(assignment.getExamSchedule().getExam().getUuid())
+                .examName(assignment.getExamSchedule().getExam().getName())
+                .subjectName(assignment.getExamSchedule().getSubject().getName())
+                .examDate(assignment.getExamSchedule().getExamDate())
+                .teacherId(assignment.getTeacher().getUuid())
+                .teacherName(teacherName)
+                .status(assignment.getStatus())
+                .assignedAt(assignment.getAssignedAt())
+                .dueDate(assignment.getDueDate())
+                .build();
+    }
+
+    private TeacherEvaluationStudentResponseDTO toTeacherEvaluationStudentResponse(Student student, AnswerSheet sheet) {
+        String fullName = student.getUserProfile().getFirstName() + " " + student.getUserProfile().getLastName();
+        return TeacherEvaluationStudentResponseDTO.builder()
+                .studentId(student.getUuid())
+                .studentName(fullName.trim())
+                .enrollmentNumber(student.getEnrollmentNumber())
+                .answerSheetId(sheet != null ? sheet.getId() : null)
+                .answerSheetStatus(sheet != null ? sheet.getStatus() : null)
+                .build();
+    }
+
+    private AnswerSheetImageGroupResponseDTO toImageGroupResponse(AnswerSheet answerSheet) {
+        List<AnswerSheetImagePageResponseDTO> pages = answerSheetImageRepository
+                .findByAnswerSheetIdOrderByPageNumberAsc(answerSheet.getId())
+                .stream()
+                .map(image -> AnswerSheetImagePageResponseDTO.builder()
+                        .pageNumber(image.getPageNumber())
+                        .imageUrl(image.getImageUrl())
+                        .build())
+                .collect(Collectors.toList());
+
+        return AnswerSheetImageGroupResponseDTO.builder()
+                .answerSheetId(answerSheet.getId())
+                .studentId(answerSheet.getStudent().getUuid())
+                .examScheduleId(answerSheet.getExamSchedule().getId())
+                .status(answerSheet.getStatus())
+                .updatedAt(answerSheet.getUpdatedAt())
+                .pages(pages)
+                .build();
+    }
+
+    private EvaluationResultResponseDTO toEvaluationResultResponse(EvaluationResult result) {
+        return EvaluationResultResponseDTO.builder()
+                .answerSheetId(result.getAnswerSheet().getId())
+                .totalMarks(result.getTotalMarks())
+                .status(result.getStatus().name())
+                .evaluatedAt(result.getEvaluatedAt())
+                .build();
+    }
+
+    private Map<String, BigDecimal> buildMaxMarksMap(TemplateSnapshot snapshot) {
+        if (snapshot == null || snapshot.getSections() == null || snapshot.getSections().isEmpty()) {
+            throw new EdusyncException("EVAL-400", "Evaluation structure is unavailable", HttpStatus.BAD_REQUEST);
+        }
+        Map<String, BigDecimal> maxByKey = new HashMap<>();
+        for (TemplateSnapshotSection section : snapshot.getSections()) {
+            BigDecimal max = BigDecimal.valueOf(section.getMarksPerQuestion());
+            for (int q = 1; q <= section.getQuestionCount(); q++) {
+                maxByKey.put(buildQuestionKey(section.getName(), q), max);
+            }
+        }
+        return maxByKey;
+    }
+
+    private String buildQuestionKey(String sectionName, Integer questionNumber) {
+        return sectionName.trim() + "#" + questionNumber;
+    }
+
+    private List<SaveQuestionMarkRequestDTO> normalizeQuestionMarks(List<SaveQuestionMarkRequestDTO> questionMarks) {
+        Map<String, SaveQuestionMarkRequestDTO> byKey = new LinkedHashMap<>();
+        for (SaveQuestionMarkRequestDTO mark : questionMarks) {
+            String key = buildQuestionKey(mark.getSectionName(), mark.getQuestionNumber());
+            if (byKey.containsKey(key)) {
+                log.warn("Duplicate mark entry detected for key={} in saveDraftMarks; last value will be used", key);
+            }
+            byKey.put(key, mark);
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
+    private void markAssignmentInProgress(Long scheduleId, Long teacherId) {
+        assignmentRepository.findByExamScheduleIdAndTeacherId(scheduleId, teacherId).ifPresent(assignment -> {
+            if (assignment.getStatus() == EvaluationAssignmentStatus.ASSIGNED) {
+                assignment.setStatus(EvaluationAssignmentStatus.IN_PROGRESS);
+                assignmentRepository.save(assignment);
+            }
+        });
+    }
+
+    private void markAssignmentCompleted(Long scheduleId, Long teacherId) {
+        assignmentRepository.findByExamScheduleIdAndTeacherId(scheduleId, teacherId).ifPresent(assignment -> {
+            assignment.setStatus(EvaluationAssignmentStatus.COMPLETED);
+            assignmentRepository.save(assignment);
+        });
+    }
+
+    private void validateAnnotation(AnnotationRequestDTO requestDTO) {
+        if (requestDTO.getPageNumber() == null || requestDTO.getPageNumber() < 1) {
+            throw new EdusyncException("EVAL-400", "pageNumber must be >= 1", HttpStatus.BAD_REQUEST);
+        }
+        if (requestDTO.getX() == null || requestDTO.getY() == null || requestDTO.getX() < 0 || requestDTO.getY() < 0) {
+            throw new EdusyncException("EVAL-400", "Annotation coordinates must be non-negative", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private Map<String, Object> sanitizeMetadata(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> sanitized = new HashMap<>();
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            if (ALLOWED_METADATA_KEYS.contains(entry.getKey())) {
+                sanitized.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return sanitized.isEmpty() ? null : sanitized;
+    }
+
+    private AnnotationResponseDTO toAnnotationResponse(AnswerSheetAnnotation annotation) {
+        return AnnotationResponseDTO.builder()
+                .id(annotation.getId())
+                .pageNumber(annotation.getPageNumber())
+                .x(annotation.getX())
+                .y(annotation.getY())
+                .type(annotation.getType())
+                .metadata(annotation.getMetadata())
+                .build();
+    }
+
+    private String sign(Long answerSheetId, long expires) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(fileSigningSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] raw = mac.doFinal((answerSheetId + ":" + expires).getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        } catch (Exception e) {
+            throw new EdusyncException("EVAL-500", "Failed to generate signed URL token", HttpStatus.INTERNAL_SERVER_ERROR, e);
+        }
+    }
+
+    private boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        byte[] x = a.getBytes(StandardCharsets.UTF_8);
+        byte[] y = b.getBytes(StandardCharsets.UTF_8);
+        if (x.length != y.length) {
+            return false;
+        }
+        int result = 0;
+        for (int i = 0; i < x.length; i++) {
+            result |= x[i] ^ y[i];
+        }
+        return result == 0;
+    }
+}
+

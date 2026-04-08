@@ -1,6 +1,7 @@
 package com.project.edusync.em.model.service;
 
 import com.project.edusync.em.model.dto.RequestDTO.ExamScheduleRequestDTO;
+import com.project.edusync.em.model.dto.ResponseDTO.EvaluationStructureResponseDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.ExamScheduleResponseDTO;
 
 import java.util.List;
@@ -32,4 +33,9 @@ public interface ExamScheduleService {
      * Deletes a schedule.
      */
     void deleteSchedule(Long scheduleId);
+
+    /**
+     * Builds question-wise evaluation structure from frozen schedule snapshot.
+     */
+    EvaluationStructureResponseDTO getEvaluationStructure(Long scheduleId);
 }

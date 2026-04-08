@@ -24,6 +24,9 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ExamScheduleRequestDTO {
 
+    @NotNull(message = "Template UUID is required")
+    private UUID templateId;
+
     @NotNull(message = "Duration (minutes) is required")
     private Integer duration;
     @NotNull(message = "Class UUID is required")

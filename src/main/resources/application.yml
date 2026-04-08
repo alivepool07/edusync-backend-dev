@@ -14,6 +14,15 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       timeout: 500ms
+      repositories:
+        enabled: false
+      lettuce:
+        pool:
+          enabled: true
+          max-active: ${REDIS_POOL_MAX_ACTIVE:16}
+          max-idle: ${REDIS_POOL_MAX_IDLE:16}
+          min-idle: ${REDIS_POOL_MIN_IDLE:2}
+          max-wait: ${REDIS_POOL_MAX_WAIT:1s}
   profiles:
     active: dev
   mail:
@@ -47,6 +56,11 @@ spring:
     locations: classpath:db/migration
     # Keep baseline opt-in by default for safety in existing environments.
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
+
+  servlet:
+    multipart:
+      max-file-size: ${MAX_UPLOAD_FILE_SIZE:10MB}
+      max-request-size: ${MAX_UPLOAD_REQUEST_SIZE:12MB}
 
 # ===================================================================
 # APPLICATION-SPECIFIC PROPERTIES
@@ -96,6 +110,15 @@ app:
   bootstrap:
     super-admin:
       fail-on-missing-credentials: ${SUPER_ADMIN_BOOTSTRAP_REQUIRED:false}
+
+  evaluation:
+    storage:
+      private-dir: ${EVALUATION_PRIVATE_STORAGE_DIR:uploads-private/answer-sheets}
+    upload:
+      max-per-minute: ${EVALUATION_UPLOAD_MAX_PER_MINUTE:20}
+    file-signing-secret: ${EVALUATION_FILE_SIGNING_SECRET:${app.jwt.secret-key}}
+    draft:
+      ttl-minutes: ${EVALUATION_DRAFT_TTL_MINUTES:30}
 
 # NOTE: 'api.url' is kept at the root namespace as it is referenced
 # directly via @RequestMapping("${api.url}/...") across all controllers.

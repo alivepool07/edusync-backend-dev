@@ -70,9 +70,13 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
 
     List<Student> findBySectionIdOrderByRollNoAsc(Long sectionId);
 
+    Page<Student> findBySectionIdOrderByRollNoAsc(Long sectionId, Pageable pageable);
+
     List<Student> findBySection_AcademicClass_Id(Long classId);
 
     List<Student> findBySection_AcademicClass_IdOrderByRollNoAsc(Long classId);
+
+    Page<Student> findBySection_AcademicClass_IdOrderByRollNoAsc(Long classId, Pageable pageable);
 
     long countBySectionId(Long sectionId);
 

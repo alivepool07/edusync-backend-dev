@@ -3,7 +3,6 @@ import com.project.edusync.em.model.dto.RequestDTO.ExamRequestDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.ExamResponseDTO;
 import com.project.edusync.em.model.entity.Exam;
 import org.mapstruct.*;
-import org.springframework.context.annotation.Bean;
 
 @Mapper(
         componentModel = "spring", // Integrates with Spring as a Bean
@@ -17,6 +16,8 @@ public interface ExamMapper {
 
     // Converts Entity -> DTO for responses
     @Mapping(target = "isPublished", source = "published") // Resolves boolean isPublished vs Boolean published mismatch
+    @Mapping(target = "templateId", source = "template.uuid")
+    @Mapping(target = "templateName", source = "template.name")
     ExamResponseDTO toResponseDTO(Exam exam);
 
     // Updates an existing entity from a DTO, ignoring nulls
