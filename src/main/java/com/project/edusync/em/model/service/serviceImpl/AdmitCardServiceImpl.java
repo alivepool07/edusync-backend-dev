@@ -1,5 +1,7 @@
 package com.project.edusync.em.model.service.serviceImpl;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 import com.project.edusync.common.exception.emException.EdusyncException;
 import com.project.edusync.common.security.AuthUtil;
 import com.project.edusync.em.model.dto.ResponseDTO.AdmitCardEntryResponseDTO;
@@ -20,20 +22,24 @@ import com.project.edusync.em.model.repository.SeatAllocationRepository;
 import com.project.edusync.em.model.service.AdmitCardService;
 import com.project.edusync.finance.service.PdfGenerationService;
 import com.project.edusync.iam.model.entity.User;
+import com.project.edusync.uis.config.MediaUploadProperties;
 import com.project.edusync.uis.model.entity.Student;
 import com.project.edusync.uis.repository.StudentRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -66,9 +72,25 @@ public class AdmitCardServiceImpl implements AdmitCardService {
     private final StudentRepository studentRepository;
     private final PdfGenerationService pdfGenerationService;
     private final AuthUtil authUtil;
+    private final MediaUploadProperties mediaUploadProperties;
+
+    private Cloudinary cloudinary;
 
     @Value("${app.admit-card.storage.private-dir:uploads-private/admit-cards}")
     private String admitCardStorageDir;
+
+    @PostConstruct
+    private void initCloudinary() {
+        MediaUploadProperties.Cloudinary cfg = mediaUploadProperties.getCloudinary();
+        if (cfg == null || cfg.getCloudName() == null || cfg.getApiKey() == null || cfg.getApiSecret() == null) {
+            throw new EdusyncException("EM-500", "Cloudinary upload is not configured properly", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        this.cloudinary = new Cloudinary(ObjectUtils.asMap(
+                "cloud_name", cfg.getCloudName(),
+                "api_key", cfg.getApiKey(),
+                "api_secret", cfg.getApiSecret()
+        ));
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     //  Generate for entire exam (legacy / convenience — calls per-schedule internally)
@@ -368,7 +390,6 @@ public class AdmitCardServiceImpl implements AdmitCardService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public byte[] downloadAdmitCardsZip(UUID examUuid) {
         requireAdmin();
         Exam exam = examRepository.findByUuid(examUuid)
@@ -383,19 +404,16 @@ public class AdmitCardServiceImpl implements AdmitCardService {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
              ZipOutputStream zos = new ZipOutputStream(baos)) {
             for (AdmitCard card : cards) {
-                if (card.getPdfUrl() == null) {
-                    continue;
-                }
-                Path pdfPath = resolveStoredPath(card.getPdfUrl());
-                if (!Files.exists(pdfPath)) {
+                byte[] pdfBytes = resolvePdfBytesForDownload(card);
+                if (pdfBytes == null || pdfBytes.length == 0) {
                     continue;
                 }
                 String studentCode = card.getStudent().getEnrollmentNumber() != null
-                        ? card.getStudent().getEnrollmentNumber()
+                        ? card.getStudent().getEnrollmentNumber().replaceAll("[^a-zA-Z0-9_-]", "_")
                         : String.valueOf(card.getStudent().getId());
                 String entryName = "exam-" + examId + "/" + studentCode + "-admit-card.pdf";
                 zos.putNextEntry(new ZipEntry(entryName));
-                zos.write(Files.readAllBytes(pdfPath));
+                zos.write(pdfBytes);
                 zos.closeEntry();
             }
             zos.finish();
@@ -406,7 +424,6 @@ public class AdmitCardServiceImpl implements AdmitCardService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public AdmitCardResponseDTO getStudentAdmitCard(UUID examUuid) {
         Student student = getCurrentStudent();
         Exam exam = examRepository.findByUuid(examUuid)
@@ -418,11 +435,12 @@ public class AdmitCardServiceImpl implements AdmitCardService {
         if (card.getStatus() != AdmitCardStatus.PUBLISHED) {
             throw new EdusyncException("EM-403", "Admit card is not published yet", HttpStatus.FORBIDDEN);
         }
+
+        card.setPdfUrl(ensureCloudinaryPdfUrl(card));
         return toResponse(card, admitCardEntryRepository.findByAdmitCardIdWithSchedule(card.getId()));
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Resource downloadStudentAdmitCardPdf(UUID examUuid) {
         Student student = getCurrentStudent();
         Exam exam = examRepository.findByUuid(examUuid)
@@ -434,20 +452,11 @@ public class AdmitCardServiceImpl implements AdmitCardService {
         if (card.getStatus() != AdmitCardStatus.PUBLISHED) {
             throw new EdusyncException("EM-403", "Admit card is not published yet", HttpStatus.FORBIDDEN);
         }
-        if (card.getPdfUrl() == null) {
+        byte[] bytes = resolvePdfBytesForDownload(card);
+        if (bytes == null || bytes.length == 0) {
             throw new EdusyncException("EM-404", "Admit card PDF not found", HttpStatus.NOT_FOUND);
         }
-
-        try {
-            Path path = resolveStoredPath(card.getPdfUrl());
-            Resource resource = new UrlResource(path.toUri());
-            if (!resource.exists() || !resource.isReadable()) {
-                throw new EdusyncException("EM-404", "Admit card PDF not found", HttpStatus.NOT_FOUND);
-            }
-            return resource;
-        } catch (MalformedURLException e) {
-            throw new EdusyncException("EM-500", "Unable to load admit card PDF", HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+        return new ByteArrayResource(bytes);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -509,19 +518,34 @@ public class AdmitCardServiceImpl implements AdmitCardService {
     }
 
     private String savePdf(AdmitCard card, byte[] pdfBytes) {
-        Path root = ensureStorageRoot();
         String studentCode = card.getStudent().getEnrollmentNumber() != null
                 ? card.getStudent().getEnrollmentNumber().replaceAll("[^a-zA-Z0-9_-]", "_")
                 : "student-" + card.getStudent().getId();
-        Path relative = Paths.get("exam-" + card.getExam().getId(), studentCode + "-admit-card.pdf");
-        Path absolute = root.resolve(relative).normalize();
-
         try {
-            Files.createDirectories(absolute.getParent());
-            Files.write(absolute, pdfBytes);
-            return relative.toString().replace('\\', '/');
-        } catch (IOException e) {
-            throw new EdusyncException("EM-500", "Unable to store admit card PDF", HttpStatus.INTERNAL_SERVER_ERROR);
+            String folder = mediaUploadProperties.getCloudinary() != null
+                    && mediaUploadProperties.getCloudinary().getFolder() != null
+                    ? mediaUploadProperties.getCloudinary().getFolder()
+                    : "admit-cards";
+            String publicId = folder + "/admit-cards/exam-" + card.getExam().getId() + "/" + studentCode + "-admit-card";
+
+            @SuppressWarnings("rawtypes")
+            Map uploadResult = cloudinary.uploader().upload(pdfBytes, ObjectUtils.asMap(
+                    "public_id", publicId,
+                    "resource_type", "raw",
+                    "overwrite", true,
+                    "invalidate", true,
+                    "format", "pdf"
+            ));
+
+            Object secureUrl = uploadResult.get("secure_url");
+            if (secureUrl == null) {
+                throw new EdusyncException("EM-500", "Cloudinary did not return a file URL", HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+            return secureUrl.toString();
+        } catch (Exception e) {
+            log.error("Cloudinary upload failed for admit card examId={}, studentId={}",
+                    card.getExam().getId(), card.getStudent().getId(), e);
+            throw new EdusyncException("EM-500", "Unable to upload admit card PDF", HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -537,6 +561,86 @@ public class AdmitCardServiceImpl implements AdmitCardService {
 
     private Path resolveStoredPath(String storedPath) {
         return ensureStorageRoot().resolve(storedPath).normalize();
+    }
+
+    private String ensureCloudinaryPdfUrl(AdmitCard card) {
+        String currentPdfUrl = card.getPdfUrl();
+        if (isRemoteUrl(currentPdfUrl)) {
+            return currentPdfUrl;
+        }
+
+        byte[] sourcePdfBytes = null;
+        if (currentPdfUrl != null && !currentPdfUrl.isBlank()) {
+            sourcePdfBytes = loadLocalPdfBytes(currentPdfUrl);
+        }
+
+        // If legacy local file is unavailable, rebuild from admit-card entries and upload.
+        if (sourcePdfBytes == null || sourcePdfBytes.length == 0) {
+            List<AdmitCardEntry> entries = admitCardEntryRepository.findByAdmitCardIdWithSchedule(card.getId());
+            if (entries == null || entries.isEmpty()) {
+                throw new EdusyncException("EM-404", "Admit card PDF not found", HttpStatus.NOT_FOUND);
+            }
+            sourcePdfBytes = buildAdmitCardPdf(card, entries);
+        }
+
+        String cloudinaryUrl = savePdf(card, sourcePdfBytes);
+        card.setPdfUrl(cloudinaryUrl);
+        admitCardRepository.save(card);
+        return cloudinaryUrl;
+    }
+
+    private byte[] resolvePdfBytesForDownload(AdmitCard card) {
+        String cloudinaryPdfUrl = ensureCloudinaryPdfUrl(card);
+        byte[] bytes = loadPdfBytes(cloudinaryPdfUrl);
+        if (bytes != null && bytes.length > 0) {
+            return bytes;
+        }
+
+        // If Cloudinary delivery is restricted (401), regenerate PDF from DB snapshot and re-upload.
+        List<AdmitCardEntry> entries = admitCardEntryRepository.findByAdmitCardIdWithSchedule(card.getId());
+        if (entries == null || entries.isEmpty()) {
+            return null;
+        }
+
+        byte[] rebuiltPdf = buildAdmitCardPdf(card, entries);
+        String refreshedUrl = savePdf(card, rebuiltPdf);
+        card.setPdfUrl(refreshedUrl);
+        admitCardRepository.save(card);
+        return rebuiltPdf;
+    }
+
+    private boolean isRemoteUrl(String value) {
+        return value != null && (value.startsWith("http://") || value.startsWith("https://"));
+    }
+
+    private byte[] loadPdfBytes(String storedPathOrUrl) {
+        if (storedPathOrUrl == null || storedPathOrUrl.isBlank()) {
+            return null;
+        }
+        try {
+            if (isRemoteUrl(storedPathOrUrl)) {
+                try (InputStream in = new URL(storedPathOrUrl).openStream()) {
+                    return in.readAllBytes();
+                }
+            }
+            return null;
+        } catch (Exception ex) {
+            log.warn("Unable to read admit card PDF from {}: {}", storedPathOrUrl, ex.getMessage());
+            return null;
+        }
+    }
+
+    private byte[] loadLocalPdfBytes(String storedPath) {
+        try {
+            Path path = resolveStoredPath(storedPath);
+            if (!Files.exists(path)) {
+                return null;
+            }
+            return Files.readAllBytes(path);
+        } catch (Exception ex) {
+            log.warn("Unable to read legacy local admit card PDF from {}", storedPath, ex);
+            return null;
+        }
     }
 
     private AdmitCardResponseDTO toResponse(AdmitCard card, List<AdmitCardEntry> entries) {
