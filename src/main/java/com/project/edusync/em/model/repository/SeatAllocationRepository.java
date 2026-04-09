@@ -223,6 +223,18 @@ public interface SeatAllocationRepository extends JpaRepository<SeatAllocation, 
         @Param("examScheduleId") Long examScheduleId,
         @Param("studentId") Long studentId);
 
+    @Query("""
+        SELECT sa FROM SeatAllocation sa
+        JOIN FETCH sa.seat s
+        JOIN FETCH s.room r
+        JOIN FETCH sa.student st
+        WHERE sa.examSchedule.id IN :scheduleIds
+          AND st.id IN :studentIds
+        """)
+    List<SeatAllocation> findByExamScheduleIdsAndStudentIdsWithSeat(
+        @Param("scheduleIds") Collection<Long> scheduleIds,
+        @Param("studentIds") Collection<Long> studentIds);
+
     // ── 14. Find allocations by room to build Room mode and OccpuiedBy ──
     @Query("""
         SELECT sa.seat.room.id, sa.examSchedule.maxStudentsPerSeat, sa.examSchedule.subject.name, sa.examSchedule.academicClass.name, COUNT(sa.id)

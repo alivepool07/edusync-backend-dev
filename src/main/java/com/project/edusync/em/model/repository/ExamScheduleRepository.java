@@ -33,4 +33,16 @@ List<ExamSchedule> findUpcomingForSection(@Param("sectionId") Long sectionId,
     boolean existsByAcademicClassAndTimeslotAndExamDate(AcademicClass academicClass, Timeslot timeslot, java.time.LocalDate examDate);
     boolean existsByAcademicClassAndSubjectAndExamDate(AcademicClass academicClass, Subject subject, java.time.LocalDate examDate);
     java.util.List<ExamSchedule> findByAcademicClass(AcademicClass academicClass);
+
+	@Query("""
+			SELECT es FROM ExamSchedule es
+			JOIN FETCH es.exam ex
+			JOIN FETCH es.subject sub
+			JOIN FETCH es.timeslot ts
+			JOIN FETCH es.academicClass ac
+			LEFT JOIN FETCH es.section sec
+			WHERE ex.id = :examId
+			ORDER BY es.examDate ASC, ts.startTime ASC
+			""")
+	java.util.List<ExamSchedule> findByExamIdWithDetails(@Param("examId") Long examId);
 }

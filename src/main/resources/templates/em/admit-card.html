@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>Admit Card</title>
+    <style>
+        body { font-family: Arial, sans-serif; color: #1f2937; font-size: 12px; }
+        .header { border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 12px; }
+        .title { font-size: 20px; font-weight: 700; }
+        .subtitle { color: #4b5563; margin-top: 3px; }
+        .meta { margin: 10px 0; }
+        .meta-row { margin: 3px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; }
+        th { background-color: #f3f4f6; font-weight: 600; }
+        .foot { margin-top: 18px; display: flex; justify-content: space-between; }
+        .sign { width: 220px; border-top: 1px solid #111827; padding-top: 4px; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <div class="title">Examination Admit Card</div>
+    <div class="subtitle" th:text="${examName}">Exam Name</div>
+    <div class="subtitle">Type: <span th:text="${examType}">TERM</span></div>
+</div>
+
+<div class="meta">
+    <div class="meta-row"><strong>Student Name:</strong> <span th:text="${studentName}">Student</span></div>
+    <div class="meta-row"><strong>Enrollment Number:</strong> <span th:text="${enrollmentNumber}">ENR001</span></div>
+    <div class="meta-row"><strong>Generated At:</strong> <span th:text="${generatedAt}">2026-04-09T10:00:00</span></div>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>Subject</th>
+        <th>Date</th>
+        <th>Start</th>
+        <th>End</th>
+        <th>Room</th>
+        <th>Seat</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="entry : ${entries}">
+        <td th:text="${entry.subjectName}">Subject</td>
+        <td th:text="${entry.examDate}">2026-04-10</td>
+        <td th:text="${entry.startTime}">09:00</td>
+        <td th:text="${entry.endTime}">12:00</td>
+        <td>
+            <span th:text="${entry.roomName}">Room Name</span>
+            <span th:if="${entry.roomId != null}"> (#<span th:text="${entry.roomId}">1</span>)</span>
+        </td>
+        <td>
+            <span th:text="${entry.seatLabel}">R1-C1</span>
+            <span th:if="${entry.seatId != null}"> (#<span th:text="${entry.seatId}">10</span>)</span>
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<div class="foot">
+    <div class="sign">Exam Controller</div>
+    <div class="sign">Principal</div>
+</div>
+</body>
+</html>
+
