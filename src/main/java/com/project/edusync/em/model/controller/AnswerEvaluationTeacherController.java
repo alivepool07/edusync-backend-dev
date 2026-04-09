@@ -99,9 +99,14 @@ public class AnswerEvaluationTeacherController {
         return ResponseEntity.ok(answerEvaluationService.saveDraftMarks(answerSheetId, requestDTO));
     }
 
+    @PostMapping("/evaluation/{answerSheetId}/submit")
+    public ResponseEntity<EvaluationResultResponseDTO> submitMarks(@PathVariable Long answerSheetId) {
+        return ResponseEntity.ok(answerEvaluationService.submitMarks(answerSheetId));
+    }
+
     @PostMapping("/evaluation/{answerSheetId}/publish")
-    public ResponseEntity<EvaluationResultResponseDTO> publishMarks(@PathVariable Long answerSheetId) {
-        return ResponseEntity.ok(answerEvaluationService.publishMarks(answerSheetId));
+    public ResponseEntity<EvaluationResultResponseDTO> publishAlias(@PathVariable Long answerSheetId) {
+        return ResponseEntity.ok(answerEvaluationService.submitMarks(answerSheetId));
     }
 
     @PostMapping("/answer-sheets/{id}/annotations")

@@ -22,6 +22,7 @@ import com.project.edusync.em.model.repository.*;
 import com.project.edusync.em.model.service.AnswerEvaluationService;
 import com.project.edusync.em.model.service.EvaluationAuditService;
 import com.project.edusync.em.model.service.EvaluationDraftStoreService;
+import com.project.edusync.finance.service.PdfGenerationService;
 import com.project.edusync.iam.model.entity.User;
 import com.project.edusync.uis.model.entity.Staff;
 import com.project.edusync.uis.model.entity.Student;
@@ -83,6 +84,7 @@ public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
     private final AuthUtil authUtil;
     private final EvaluationAuditService evaluationAuditService;
     private final EvaluationDraftStoreService evaluationDraftStoreService;
+    private final PdfGenerationService pdfGenerationService;
 
     @Value("${app.evaluation.storage.private-dir:uploads-private/answer-sheets}")
     private String privateStorageDir;
@@ -508,8 +510,10 @@ public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
                             .evaluatedAt(LocalDateTime.now())
                             .build());
 
-            if (result.getStatus() == EvaluationResultStatus.FINAL) {
-                throw new EdusyncException("EVAL-409", "Finalized evaluation cannot be modified", HttpStatus.CONFLICT);
+            if (result.getStatus() == EvaluationResultStatus.SUBMITTED
+                    || result.getStatus() == EvaluationResultStatus.APPROVED
+                    || result.getStatus() == EvaluationResultStatus.PUBLISHED) {
+                throw new EdusyncException("EVAL-409", "Submitted or published evaluation cannot be modified", HttpStatus.CONFLICT);
             }
 
             Map<String, BigDecimal> maxByQuestionKey = buildMaxMarksMap(answerSheet.getExamSchedule().getTemplateSnapshot());
@@ -587,6 +591,9 @@ public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
             result.setTotalMarks(total);
             result.setStatus(EvaluationResultStatus.DRAFT);
             result.setEvaluatedAt(LocalDateTime.now());
+            result.setApprovedAt(null);
+            result.setPublishedAt(null);
+            result.setApprovedBy(null);
             EvaluationResult saved = evaluationResultRepository.save(result);
 
             answerSheet.setStatus(AnswerSheetStatus.DRAFT);
@@ -605,32 +612,167 @@ public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
 
     @Override
     @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
-    public EvaluationResultResponseDTO publishMarks(Long answerSheetId) {
+    public EvaluationResultResponseDTO submitMarks(Long answerSheetId) {
         Staff teacher = getCurrentTeacher();
         AnswerSheet answerSheet = getAnswerSheetForEvaluator(answerSheetId, teacher.getId());
 
         EvaluationResult result = evaluationResultRepository.findByAnswerSheetId(answerSheetId)
                 .orElseThrow(() -> new EdusyncException("EVAL-404", "No draft marks found for answer sheet", HttpStatus.NOT_FOUND));
 
-        if (result.getStatus() == EvaluationResultStatus.FINAL) {
+        if (result.getStatus() == EvaluationResultStatus.SUBMITTED) {
             return toEvaluationResultResponse(result);
         }
+        if (result.getStatus() != EvaluationResultStatus.DRAFT
+                && result.getStatus() != EvaluationResultStatus.REJECTED) {
+            throw new EdusyncException("EVAL-409", "Only draft or rejected results can be submitted", HttpStatus.CONFLICT);
+        }
 
-        result.setStatus(EvaluationResultStatus.FINAL);
+        result.setStatus(EvaluationResultStatus.SUBMITTED);
+        result.setSubmittedAt(LocalDateTime.now());
+        result.setApprovedAt(null);
+        result.setPublishedAt(null);
+        result.setApprovedBy(null);
         result.setEvaluatedAt(LocalDateTime.now());
         EvaluationResult saved = evaluationResultRepository.save(result);
 
-        answerSheet.setStatus(AnswerSheetStatus.FINAL);
+        answerSheet.setStatus(AnswerSheetStatus.CHECKING);
         answerSheetRepository.save(answerSheet);
         markAssignmentCompleted(answerSheet.getExamSchedule().getId(), teacher.getId());
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("totalMarks", saved.getTotalMarks());
         metadata.put("status", saved.getStatus().name());
-        evaluationAuditService.record(EvaluationAuditEventType.MARKS_PUBLISHED, teacher, null, answerSheet, saved, metadata);
-        evaluationDraftStoreService.deleteDraft(answerSheetId);
-        log.info("Evaluation published: answerSheetId={}, totalMarks={}", answerSheetId, saved.getTotalMarks());
+        evaluationAuditService.record(EvaluationAuditEventType.MARKS_SUBMITTED, teacher, null, answerSheet, saved, metadata);
+        log.info("Evaluation submitted: answerSheetId={}, totalMarks={}", answerSheetId, saved.getTotalMarks());
 
         return toEvaluationResultResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AdminResultReviewResponseDTO> getResultsForAdmin(EvaluationResultStatus status) {
+        requireAdmin();
+        List<EvaluationResult> results = status == null
+                ? evaluationResultRepository.findAllWithContext()
+                : evaluationResultRepository.findAllByStatusWithContext(status);
+        return results.stream().map(this::toAdminResultResponse).collect(Collectors.toList());
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public EvaluationResultResponseDTO approveResult(Long resultId) {
+        requireAdmin();
+        EvaluationResult result = getResultForAdmin(resultId);
+        if (result.getStatus() != EvaluationResultStatus.SUBMITTED) {
+            throw new EdusyncException("EVAL-409", "Only submitted results can be approved", HttpStatus.CONFLICT);
+        }
+
+        result.setStatus(EvaluationResultStatus.APPROVED);
+        result.setApprovedAt(LocalDateTime.now());
+        result.setApprovedBy(authUtil.getCurrentUser());
+        EvaluationResult saved = evaluationResultRepository.save(result);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("resultId", saved.getId());
+        metadata.put("status", saved.getStatus().name());
+        metadata.put("approvedBy", saved.getApprovedBy() != null ? saved.getApprovedBy().getUsername() : null);
+        evaluationAuditService.record(EvaluationAuditEventType.MARKS_APPROVED, null, null, saved.getAnswerSheet(), saved, metadata);
+        return toEvaluationResultResponse(saved);
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public EvaluationResultResponseDTO rejectResult(Long resultId) {
+        requireAdmin();
+        EvaluationResult result = getResultForAdmin(resultId);
+        if (result.getStatus() != EvaluationResultStatus.SUBMITTED) {
+            throw new EdusyncException("EVAL-409", "Only submitted results can be rejected", HttpStatus.CONFLICT);
+        }
+
+        result.setStatus(EvaluationResultStatus.REJECTED);
+        result.setApprovedAt(null);
+        result.setPublishedAt(null);
+        result.setApprovedBy(authUtil.getCurrentUser());
+        EvaluationResult saved = evaluationResultRepository.save(result);
+
+        AnswerSheet answerSheet = saved.getAnswerSheet();
+        answerSheet.setStatus(AnswerSheetStatus.DRAFT);
+        answerSheetRepository.save(answerSheet);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("resultId", saved.getId());
+        metadata.put("status", saved.getStatus().name());
+        evaluationAuditService.record(EvaluationAuditEventType.MARKS_REJECTED, null, null, answerSheet, saved, metadata);
+        return toEvaluationResultResponse(saved);
+    }
+
+    @Override
+    @CacheEvict(value = CacheNames.SCHEDULE_STUDENTS, allEntries = true)
+    public EvaluationResultResponseDTO publishResult(Long resultId) {
+        requireAdmin();
+        EvaluationResult result = getResultForAdmin(resultId);
+        if (result.getStatus() == EvaluationResultStatus.PUBLISHED) {
+            return toEvaluationResultResponse(result);
+        }
+        if (result.getStatus() != EvaluationResultStatus.APPROVED) {
+            throw new EdusyncException("EVAL-409", "Only approved results can be published", HttpStatus.CONFLICT);
+        }
+
+        result.setStatus(EvaluationResultStatus.PUBLISHED);
+        result.setPublishedAt(LocalDateTime.now());
+        if (result.getApprovedBy() == null) {
+            result.setApprovedBy(authUtil.getCurrentUser());
+        }
+        EvaluationResult saved = evaluationResultRepository.save(result);
+
+        AnswerSheet answerSheet = saved.getAnswerSheet();
+        answerSheet.setStatus(AnswerSheetStatus.FINAL);
+        answerSheetRepository.save(answerSheet);
+        evaluationDraftStoreService.deleteDraft(answerSheet.getId());
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("resultId", saved.getId());
+        metadata.put("status", saved.getStatus().name());
+        metadata.put("publishedAt", saved.getPublishedAt() != null ? saved.getPublishedAt().toString() : null);
+        evaluationAuditService.record(EvaluationAuditEventType.MARKS_PUBLISHED, null, null, answerSheet, saved, metadata);
+        return toEvaluationResultResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<StudentResultResponseDTO> getStudentPublishedResults() {
+        Student student = getCurrentStudent();
+        return evaluationResultRepository
+                .findByStudentIdAndStatusWithContext(student.getId(), EvaluationResultStatus.PUBLISHED)
+                .stream()
+                .map(this::toStudentResultResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StudentResultDetailResponseDTO getStudentPublishedResult(Long resultId) {
+        return toStudentResultDetailResponse(getPublishedResultForCurrentStudent(resultId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] generateStudentResultPdf(Long resultId) {
+        EvaluationResult result = getPublishedResultForCurrentStudent(resultId);
+        StudentResultDetailResponseDTO detail = toStudentResultDetailResponse(result);
+
+        Student student = result.getAnswerSheet().getStudent();
+        String studentName = (student.getUserProfile().getFirstName() + " " + student.getUserProfile().getLastName()).trim();
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("studentName", studentName);
+        data.put("enrollmentNumber", student.getEnrollmentNumber());
+        data.put("examName", detail.getExamName());
+        data.put("examDate", detail.getExamDate());
+        data.put("subjectMarks", detail.getSubjectMarks());
+        data.put("totalMarks", detail.getTotalMarks());
+        data.put("maxMarks", detail.getMaxMarks());
+        data.put("publishedAt", detail.getPublishedAt());
+        return pdfGenerationService.generatePdfFromHtml("em/result-sheet", data);
     }
 
     @Override
@@ -867,6 +1009,12 @@ public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
                 .orElseThrow(() -> new EdusyncException("EVAL-403", "Current user is not mapped to teacher/staff", HttpStatus.FORBIDDEN));
     }
 
+    private Student getCurrentStudent() {
+        Long userId = authUtil.getCurrentUserId();
+        return studentRepository.findByUserProfile_User_Id(userId)
+                .orElseThrow(() -> new EdusyncException("EVAL-403", "Current user is not mapped to student", HttpStatus.FORBIDDEN));
+    }
+
     private void ensureTeacherAssigned(Long scheduleId, Long teacherId) {
         if (!assignmentRepository.existsByExamScheduleIdAndTeacherId(scheduleId, teacherId)) {
             throw new EdusyncException("EVAL-403", "Teacher is not assigned to this schedule", HttpStatus.FORBIDDEN);
@@ -1027,11 +1175,86 @@ public class AnswerEvaluationServiceImpl implements AnswerEvaluationService {
 
     private EvaluationResultResponseDTO toEvaluationResultResponse(EvaluationResult result) {
         return EvaluationResultResponseDTO.builder()
+                .resultId(result.getId())
                 .answerSheetId(result.getAnswerSheet().getId())
                 .totalMarks(result.getTotalMarks())
                 .status(result.getStatus().name())
                 .evaluatedAt(result.getEvaluatedAt())
+                .submittedAt(result.getSubmittedAt())
+                .approvedAt(result.getApprovedAt())
+                .publishedAt(result.getPublishedAt())
+                .approvedBy(result.getApprovedBy() != null ? result.getApprovedBy().getUsername() : null)
                 .build();
+    }
+
+    private AdminResultReviewResponseDTO toAdminResultResponse(EvaluationResult result) {
+        AnswerSheet sheet = result.getAnswerSheet();
+        Student student = sheet.getStudent();
+        ExamSchedule schedule = sheet.getExamSchedule();
+        String studentName = (student.getUserProfile().getFirstName() + " " + student.getUserProfile().getLastName()).trim();
+
+        return AdminResultReviewResponseDTO.builder()
+                .resultId(result.getId())
+                .answerSheetId(sheet.getId())
+                .scheduleId(schedule.getId())
+                .studentId(student.getUuid())
+                .studentName(studentName)
+                .enrollmentNumber(student.getEnrollmentNumber())
+                .examName(schedule.getExam().getName())
+                .subjectName(schedule.getSubject().getName())
+                .totalMarks(result.getTotalMarks())
+                .status(result.getStatus().name())
+                .submittedAt(result.getSubmittedAt())
+                .approvedAt(result.getApprovedAt())
+                .publishedAt(result.getPublishedAt())
+                .approvedBy(result.getApprovedBy() != null ? result.getApprovedBy().getUsername() : null)
+                .build();
+    }
+
+    private StudentResultResponseDTO toStudentResultResponse(EvaluationResult result) {
+        ExamSchedule schedule = result.getAnswerSheet().getExamSchedule();
+        return StudentResultResponseDTO.builder()
+                .resultId(result.getId())
+                .scheduleId(schedule.getId())
+                .examName(schedule.getExam().getName())
+                .subjectName(schedule.getSubject().getName())
+                .marksObtained(result.getTotalMarks())
+                .maxMarks(schedule.getMaxMarks())
+                .publishedAt(result.getPublishedAt())
+                .build();
+    }
+
+    private StudentResultDetailResponseDTO toStudentResultDetailResponse(EvaluationResult result) {
+        ExamSchedule schedule = result.getAnswerSheet().getExamSchedule();
+        StudentResultDetailResponseDTO.SubjectMarkDTO subjectMark = StudentResultDetailResponseDTO.SubjectMarkDTO.builder()
+                .subjectName(schedule.getSubject().getName())
+                .marksObtained(result.getTotalMarks())
+                .maxMarks(schedule.getMaxMarks())
+                .build();
+
+        return StudentResultDetailResponseDTO.builder()
+                .resultId(result.getId())
+                .scheduleId(schedule.getId())
+                .examName(schedule.getExam().getName())
+                .subjectName(schedule.getSubject().getName())
+                .examDate(schedule.getExamDate())
+                .totalMarks(result.getTotalMarks())
+                .maxMarks(schedule.getMaxMarks())
+                .publishedAt(result.getPublishedAt())
+                .subjectMarks(List.of(subjectMark))
+                .build();
+    }
+
+    private EvaluationResult getResultForAdmin(Long resultId) {
+        return evaluationResultRepository.findByIdWithContext(resultId)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Evaluation result not found", HttpStatus.NOT_FOUND));
+    }
+
+    private EvaluationResult getPublishedResultForCurrentStudent(Long resultId) {
+        Student student = getCurrentStudent();
+        return evaluationResultRepository
+                .findByIdAndStudentIdAndStatusWithContext(resultId, student.getId(), EvaluationResultStatus.PUBLISHED)
+                .orElseThrow(() -> new EdusyncException("EVAL-404", "Published result not found", HttpStatus.NOT_FOUND));
     }
 
     private Map<String, BigDecimal> buildMaxMarksMap(TemplateSnapshot snapshot) {

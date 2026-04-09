@@ -2,6 +2,7 @@ package com.project.edusync.em.model.entity;
 
 import com.project.edusync.common.model.AuditableEntity;
 import com.project.edusync.em.model.enums.EvaluationResultStatus;
+import com.project.edusync.iam.model.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -26,10 +27,55 @@ public class EvaluationResult extends AuditableEntity {
     private BigDecimal totalMarks = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @Column(nullable = false, length = 20)
     private EvaluationResultStatus status = EvaluationResultStatus.DRAFT;
 
     @Column(name = "evaluated_at")
     private LocalDateTime evaluatedAt;
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "published_at")
+    private LocalDateTime publishedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by")
+    private User approvedBy;
+
+    public LocalDateTime getSubmittedAt() {
+        return submittedAt;
+    }
+
+    public void setSubmittedAt(LocalDateTime submittedAt) {
+        this.submittedAt = submittedAt;
+    }
+
+    public LocalDateTime getApprovedAt() {
+        return approvedAt;
+    }
+
+    public void setApprovedAt(LocalDateTime approvedAt) {
+        this.approvedAt = approvedAt;
+    }
+
+    public LocalDateTime getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(LocalDateTime publishedAt) {
+        this.publishedAt = publishedAt;
+    }
+
+    public User getApprovedBy() {
+        return approvedBy;
+    }
+
+    public void setApprovedBy(User approvedBy) {
+        this.approvedBy = approvedBy;
+    }
 }
 

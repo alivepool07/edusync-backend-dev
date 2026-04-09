@@ -7,3 +7,4 @@ CREATE TABLE IF NOT EXISTS lecture_log_documents (
 );
 
 CREATE INDEX idx_lecture_log_documents_log_id ON lecture_log_documents (lecture_log_id);
+

@@ -28,7 +28,7 @@ public class AuditLog {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "audit_logs_gen")
-    @SequenceGenerator(name = "audit_logs_gen", sequenceName = "audit_logs_id_seq", allocationSize = 50)
+    @SequenceGenerator(name = "audit_logs_gen", sequenceName = "audit_logs_id_seq", allocationSize = 1)
     private Long id;
 
     @Column(name = "actor_username", length = 100)

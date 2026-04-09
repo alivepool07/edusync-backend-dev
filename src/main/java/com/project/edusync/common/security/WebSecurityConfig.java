@@ -110,7 +110,10 @@ public class WebSecurityConfig {
                         // 7. Teacher dashboard APIs
                         .requestMatchers(apiVersionPath + "/teacher/**").hasAnyRole("TEACHER", "ADMIN", "SUPER_ADMIN")
 
-                        // 8. Default: all remaining endpoints require authentication
+                        // 8. Student APIs
+                        .requestMatchers(apiVersionPath + "/student/**").hasAnyRole("STUDENT", "ADMIN", "SUPER_ADMIN")
+
+                        // 9. Default: all remaining endpoints require authentication
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(customAuthenticationEntryPoint))

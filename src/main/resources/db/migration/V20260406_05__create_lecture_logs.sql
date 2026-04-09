@@ -17,3 +17,4 @@ CREATE TABLE IF NOT EXISTS lecture_logs (
 
 CREATE INDEX idx_lecture_logs_schedule ON lecture_logs (schedule_id);
 CREATE INDEX idx_lecture_logs_teacher ON lecture_logs (teacher_id);
+

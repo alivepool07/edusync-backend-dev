@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>Result Sheet</title>
+    <style>
+        body { font-family: Arial, sans-serif; color: #222; font-size: 13px; }
+        .header { margin-bottom: 20px; }
+        .title { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
+        .sub { color: #666; }
+        .meta { margin: 12px 0; }
+        .meta-row { margin: 3px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f3f5f7; }
+        .totals { margin-top: 14px; font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <div class="title">Student Result Sheet</div>
+    <div class="sub" th:text="${examName}">Exam Name</div>
+</div>
+
+<div class="meta">
+    <div class="meta-row"><strong>Student:</strong> <span th:text="${studentName}">Student Name</span></div>
+    <div class="meta-row"><strong>Enrollment No:</strong> <span th:text="${enrollmentNumber}">ENR-001</span></div>
+    <div class="meta-row"><strong>Exam Date:</strong> <span th:text="${examDate}">2026-04-09</span></div>
+    <div class="meta-row"><strong>Published At:</strong> <span th:text="${publishedAt}">2026-04-09T10:00:00</span></div>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>Subject</th>
+        <th>Marks Obtained</th>
+        <th>Max Marks</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="row : ${subjectMarks}">
+        <td th:text="${row.subjectName}">Subject</td>
+        <td th:text="${row.marksObtained}">0</td>
+        <td th:text="${row.maxMarks}">0</td>
+    </tr>
+    </tbody>
+</table>
+
+<div class="totals">
+    Total: <span th:text="${totalMarks}">0</span> / <span th:text="${maxMarks}">0</span>
+</div>
+</body>
+</html>
+
