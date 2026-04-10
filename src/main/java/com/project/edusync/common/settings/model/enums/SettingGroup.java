@@ -5,6 +5,7 @@ public enum SettingGroup {
     STORAGE,
     SECURITY,
     WHITELABEL,
-    FEATURES
+    FEATURES,
+    ATTENDANCE
 }
 

@@ -3,6 +3,7 @@ package com.project.edusync.common.exception;
 
 import com.project.edusync.ams.model.exception.AttendanceProcessingException;
 import com.project.edusync.ams.model.exception.AttendanceRecordNotFoundException;
+import com.project.edusync.ams.model.exception.EditWindowExpiredException;
 import com.project.edusync.common.model.dto.ErrorResponse;
 import com.project.edusync.common.model.dto.ValidationErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -179,6 +180,25 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(
+            IllegalArgumentException ex,
+            HttpServletRequest request) {
+
+        String message = (ex.getMessage() == null || ex.getMessage().isBlank())
+                ? "Invalid request."
+                : ex.getMessage();
+
+        log.warn("Illegal argument: {} (Path: {})", message, request.getRequestURI());
+        ErrorResponse errorResponse = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                message,
+                request.getRequestURI(),
+                Instant.now()
+        );
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
     /**
      * A final catch-all handler for any other unexpected exceptions.
      * Returns HTTP 500 Internal Server Error.
@@ -188,9 +208,17 @@ public class GlobalExceptionHandler {
         // We log the full stack trace for debugging
         log.error("An unexpected internal server error occurred: (Path: {})", request.getRequestURI(), ex);
 
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            Throwable cause = ex.getCause();
+            message = (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank())
+                    ? cause.getMessage()
+                    : "An unexpected internal server error occurred. Please contact support.";
+        }
+
         ErrorResponse errorResponse = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "An unexpected internal server error occurred. Please contact support.",
+                message,
                 request.getRequestURI(),
                 Instant.now()
         );
@@ -211,7 +239,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AttendanceProcessingException.class)
     public ResponseEntity<Object> handleAttendanceProcessing(AttendanceProcessingException ex,
                                                              HttpServletRequest request) {
-        HttpStatus status = HttpStatus.CONFLICT; // 409 - business rule conflict
+        HttpStatus status = (ex.getMessage() != null
+                && (ex.getMessage().startsWith("GEO_FENCE_VIOLATION")
+                || ex.getMessage().contains("Location data is required")))
+                ? HttpStatus.BAD_REQUEST
+                : HttpStatus.CONFLICT;
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("statusCode", status.value());
@@ -220,6 +252,20 @@ public class GlobalExceptionHandler {
         body.put("timestamp", Instant.now().toString());
 
         return ResponseEntity.status(status).body(body);
+    }
+
+    @ExceptionHandler(EditWindowExpiredException.class)
+    public ResponseEntity<Object> handleEditWindowExpired(EditWindowExpiredException ex,
+                                                          HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "EDIT_WINDOW_EXPIRED");
+        body.put("message", ex.getMessage());
+        body.put("attendanceDate", ex.getAttendanceDate());
+        body.put("windowHours", ex.getWindowHours());
+        body.put("expiredAt", ex.getExpiredAt());
+        body.put("path", request.getRequestURI());
+        body.put("timestamp", Instant.now().toString());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

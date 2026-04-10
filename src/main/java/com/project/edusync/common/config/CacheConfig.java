@@ -108,6 +108,10 @@ public class CacheConfig {
                 .withCacheConfiguration(
                         CacheNames.SCHEDULE_STUDENTS,
                         redisCacheConfiguration().entryTtl(Duration.ofMinutes(15))
+                )
+                .withCacheConfiguration(
+                        CacheNames.MASTER_DASHBOARD_ANALYTICS,
+                        redisCacheConfiguration().entryTtl(Duration.ofMinutes(5))
                 );
     }
 }

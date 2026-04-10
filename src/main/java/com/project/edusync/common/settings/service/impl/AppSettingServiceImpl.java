@@ -44,13 +44,27 @@ public class AppSettingServiceImpl implements AppSettingService {
     @Override
     @Transactional(readOnly = true)
     public Map<String, List<AppSettingResponseDto>> getSettings(SettingGroup group) {
-        List<AppSetting> settings = group == null
-                ? appSettingRepository.findAllByOrderBySettingGroupAscKeyAsc()
-                : appSettingRepository.findAllBySettingGroupOrderByKeyAsc(group);
+        List<AppSetting> settings;
+        boolean attendanceCompatView = group == SettingGroup.ATTENDANCE;
+        if (group == null) {
+            settings = appSettingRepository.findAllByOrderBySettingGroupAscKeyAsc();
+        } else if (attendanceCompatView) {
+            // Backward-compatible read path when DB constraint does not yet allow ATTENDANCE enum values.
+            settings = appSettingRepository.findByKeyStartingWithOrderByKeyAsc("attendance.");
+        } else {
+            settings = appSettingRepository.findAllBySettingGroupOrderByKeyAsc(group);
+        }
 
         Map<String, List<AppSettingResponseDto>> grouped = new LinkedHashMap<>();
         for (AppSetting setting : settings) {
-            String groupName = setting.getSettingGroup().name();
+            // Always remap attendance.* keys to the virtual ATTENDANCE group,
+            // regardless of their stored DB group (currently FEATURES).
+            String groupName;
+            if (setting.getKey().startsWith("attendance.")) {
+                groupName = SettingGroup.ATTENDANCE.name();
+            } else {
+                groupName = setting.getSettingGroup().name();
+            }
             grouped.computeIfAbsent(groupName, ignored -> new ArrayList<>()).add(toResponse(setting));
         }
         return grouped;

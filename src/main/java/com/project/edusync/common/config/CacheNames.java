@@ -6,6 +6,7 @@ public final class CacheNames {
     public static final String EXAM_TEMPLATES = "examTemplates";
     public static final String SCHEDULE_STUDENTS = "scheduleStudents";
     public static final String TEACHER_DASHBOARD_SUMMARY = "teacherDashboardSummaryV2";
+    public static final String MASTER_DASHBOARD_ANALYTICS = "masterDashboardAnalytics";
 
     private CacheNames() {
     }
