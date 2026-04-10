@@ -7,6 +7,10 @@ import com.project.edusync.ams.model.exception.AttendanceProcessingException;
 import com.project.edusync.ams.model.repository.AbsenceDocumentationRepository;
 import com.project.edusync.ams.model.repository.AttendanceTypeRepository;
 import com.project.edusync.ams.model.repository.StudentDailyAttendanceRepository;
+import com.project.edusync.ams.model.service.AttendanceEditWindowService;
+import com.project.edusync.adm.repository.AcademicClassRepository;
+import com.project.edusync.adm.repository.SectionRepository;
+import com.project.edusync.hrms.repository.AcademicCalendarEventRepository;
 import com.project.edusync.uis.repository.StaffRepository;
 import com.project.edusync.uis.repository.StudentRepository;
 import org.junit.jupiter.api.Test;
@@ -23,7 +27,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,11 +52,24 @@ class StudentAttendanceServiceImplTest {
     @Mock
     private StaffRepository staffRepository;
 
+    @Mock
+    private AttendanceEditWindowService attendanceEditWindowService;
+
+    @Mock
+    private AcademicClassRepository academicClassRepository;
+
+    @Mock
+    private SectionRepository sectionRepository;
+
+    @Mock
+    private AcademicCalendarEventRepository academicCalendarEventRepository;
+
     @InjectMocks
     private StudentAttendanceServiceImpl service;
 
     @Test
     void markAttendanceBatch_rejectsOlderThanSevenDays() {
+        when(academicCalendarEventRepository.existsByDateAndDayTypeInAndAppliesToStudentsTrueAndIsActiveTrue(any(LocalDate.class), anyCollection())).thenReturn(false);
         AttendanceType presentType = attendanceType("P");
         when(attendanceTypeRepository.findByShortCodeIgnoreCase("P")).thenReturn(Optional.of(presentType));
 
@@ -70,6 +89,7 @@ class StudentAttendanceServiceImplTest {
 
     @Test
     void markAttendanceBatch_rejectsFutureDate() {
+        when(academicCalendarEventRepository.existsByDateAndDayTypeInAndAppliesToStudentsTrueAndIsActiveTrue(any(LocalDate.class), anyCollection())).thenReturn(false);
         AttendanceType presentType = attendanceType("P");
         when(attendanceTypeRepository.findByShortCodeIgnoreCase("P")).thenReturn(Optional.of(presentType));
 
@@ -92,6 +112,7 @@ class StudentAttendanceServiceImplTest {
         AttendanceType presentType = attendanceType("P");
         LocalDate boundaryDate = LocalDate.now().minusDays(7);
 
+        when(academicCalendarEventRepository.existsByDateAndDayTypeInAndAppliesToStudentsTrueAndIsActiveTrue(eq(boundaryDate), anyCollection())).thenReturn(false);
         when(attendanceTypeRepository.findByShortCodeIgnoreCase("P")).thenReturn(Optional.of(presentType));
         when(studentRepo.findByStudentIdAndAttendanceDate(1L, boundaryDate)).thenReturn(Optional.empty());
         when(studentRepo.save(any(StudentDailyAttendance.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -113,6 +134,26 @@ class StudentAttendanceServiceImplTest {
     }
 
     @Test
+    void markAttendanceBatch_rejectsHolidayForStudents() {
+        LocalDate holidayDate = LocalDate.of(2026, 4, 10);
+        StudentAttendanceRequestDTO request = new StudentAttendanceRequestDTO(
+                null,
+                1L,
+                "P",
+                holidayDate,
+                null,
+                null,
+                null
+        );
+
+        when(academicCalendarEventRepository.existsByDateAndDayTypeInAndAppliesToStudentsTrueAndIsActiveTrue(eq(holidayDate), anyCollection())).thenReturn(true);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.markAttendanceBatch(List.of(request), 7L));
+        assertEquals("Cannot mark student attendance on a non-working day.", ex.getMessage());
+        verify(studentRepo, never()).save(any(StudentDailyAttendance.class));
+    }
+
+    @Test
     void updateAttendance_rejectsExistingRecordOlderThanSevenDays() {
         UUID recordUuid = UUID.randomUUID();
         StudentDailyAttendance existing = new StudentDailyAttendance();
@@ -124,7 +165,7 @@ class StudentAttendanceServiceImplTest {
                 null,
                 1L,
                 null,
-                null,
+                LocalDate.now().minusDays(8),
                 null,
                 null,
                 null
