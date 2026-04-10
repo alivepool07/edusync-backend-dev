@@ -2,7 +2,10 @@ package com.project.edusync.ams.model.repository;
 
 import com.project.edusync.ams.model.entity.StaffDailyAttendance;
 import com.project.edusync.uis.model.enums.StaffCategory;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,7 +16,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface StaffDailyAttendanceRepository extends JpaRepository<StaffDailyAttendance, Long> {
+public interface StaffDailyAttendanceRepository extends JpaRepository<StaffDailyAttendance, Long>, JpaSpecificationExecutor<StaffDailyAttendance> {
+
+    interface StaffDailyStatusCountProjection {
+        String getShortCode();
+        Long getCount();
+    }
 
     Optional<StaffDailyAttendance> findByUuid(UUID uuid);
 
@@ -39,6 +47,25 @@ public interface StaffDailyAttendanceRepository extends JpaRepository<StaffDaily
      * Retrieves all staff attendance records for a given date.
      */
     List<StaffDailyAttendance> findByAttendanceDate(LocalDate attendanceDate);
+
+    @Query("""
+            SELECT sda.attendanceType.shortCode as shortCode, COUNT(sda.id) as count
+            FROM StaffDailyAttendance sda, Staff st
+            WHERE st.id = sda.staffId
+              AND st.isActive = true
+              AND sda.attendanceDate = :date
+            GROUP BY sda.attendanceType.shortCode
+            """)
+    List<StaffDailyStatusCountProjection> countByDateGroupedByShortCode(@Param("date") LocalDate date);
+
+    @Query("SELECT DISTINCT sda.staffId FROM StaffDailyAttendance sda WHERE sda.attendanceDate = :date")
+    List<Long> findDistinctStaffIdsByDate(@Param("date") LocalDate date);
+
+    @Query("""
+            SELECT sda FROM StaffDailyAttendance sda
+            WHERE sda.attendanceDate BETWEEN :fromDate AND :toDate
+            """)
+    List<StaffDailyAttendance> findAllByDateRange(@Param("fromDate") LocalDate fromDate, @Param("toDate") LocalDate toDate);
 
     long countByStaffId(Long staffId);
 
