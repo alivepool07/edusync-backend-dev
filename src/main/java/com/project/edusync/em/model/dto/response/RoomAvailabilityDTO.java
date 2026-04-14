@@ -11,7 +11,7 @@ import java.util.UUID;
  * Room availability summary for a given time window.
  * Returned by the "get available rooms" endpoint.
  *
- * BENCH SHARING: totalCapacity = totalSeats × maxStudentsPerSeat
+ * DYNAMIC SEATING: totalCapacity = totalSeats × maxStudentsPerSeat
  */
 @Data
 @Builder
@@ -44,7 +44,8 @@ public class RoomAvailabilityDTO {
 
     private Integer floorNumber;
 
-    private String mode; // "SINGLE", "DOUBLE", "SHARED"
+    /** "SINGLE" (1), "DOUBLE" (2), "TRIPLE" (3) */
+    private String mode;
 
     private java.util.List<OccupiedByDTO> occupiedBy;
 

@@ -172,16 +172,8 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
         }
 
         int maxStudentsPerSeat = dto.getMaxStudentsPerSeat() != null ? dto.getMaxStudentsPerSeat() : 1;
-        if (maxStudentsPerSeat != 1 && maxStudentsPerSeat != 2) {
-            throw new EdusyncException("EM-400", "maxStudentsPerSeat must be 1 or 2", HttpStatus.BAD_REQUEST);
-        }
-
-        if (maxStudentsPerSeat == 2 && dto.getSeatSide() == null) {
-            throw new EdusyncException("EM-400", "seatSide is required for DOUBLE seating", HttpStatus.BAD_REQUEST);
-        }
-
-        if (maxStudentsPerSeat == 1 && dto.getSeatSide() != null) {
-            throw new EdusyncException("EM-400", "seatSide must be null for SINGLE seating", HttpStatus.BAD_REQUEST);
+        if (maxStudentsPerSeat < 1 || maxStudentsPerSeat > 3) {
+            throw new EdusyncException("EM-400", "maxStudentsPerSeat must be 1, 2, or 3", HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -241,7 +233,6 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
 
         int maxStudentsPerSeat = dto.getMaxStudentsPerSeat() != null ? dto.getMaxStudentsPerSeat() : 1;
         entity.setMaxStudentsPerSeat(maxStudentsPerSeat);
-        entity.setSeatSide(maxStudentsPerSeat == 2 ? dto.getSeatSide() : null);
 
         long activeStudents = entity.getSection() != null
                 ? studentRepository.countBySection_IdAndIsActiveTrue(entity.getSection().getId())
@@ -272,7 +263,6 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
                 .passingMarks(java.math.BigDecimal.valueOf(entity.getMaxMarks())) // TODO: replace with actual field if available
                 .totalStudents(totalStudents)
                 .maxStudentsPerSeat(entity.getMaxStudentsPerSeat())
-                .seatSide(entity.getSeatSide())
                 .build();
     }
 
