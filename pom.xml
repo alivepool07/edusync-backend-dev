@@ -327,13 +327,13 @@
 									<goals>
 										<goal>enforce</goal>
 									</goals>
-									<configuration>
-										<rules>
-											<javaVersion>
-												<version>21</version>
-											</javaVersion>
-										</rules>
-									</configuration>
+																					<configuration>
+																						<rules>
+																							<requireJavaVersion>
+																								<version>[21,)</version>
+																							</requireJavaVersion>
+																						</rules>
+																					</configuration>
 								</execution>
 							</executions>
 						</plugin>
