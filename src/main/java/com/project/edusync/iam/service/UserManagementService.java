@@ -194,4 +194,6 @@ public interface UserManagementService {
      * Returns lightweight KPI metrics for a staff profile hero banner.
      */
     StaffKpiMetricsDTO getStaffKpiMetrics(java.util.UUID staffId);
+
+    User findByUsername(String name);
 }

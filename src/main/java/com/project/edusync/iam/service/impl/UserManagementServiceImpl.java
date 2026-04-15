@@ -414,21 +414,31 @@ public class UserManagementServiceImpl implements UserManagementService {
             staff.setDesignation(designation);
         }
 
-        com.project.edusync.hrms.model.entity.StaffDesignation designation = staffDesignationRepository.findByDesignationNameIgnoreCase(request.getJobTitle())
-                .orElseGet(() -> {
-                    com.project.edusync.hrms.model.entity.StaffDesignation newDesig = new com.project.edusync.hrms.model.entity.StaffDesignation();
-                    newDesig.setDesignationName(request.getJobTitle());
-                    String safeCode = request.getJobTitle().toUpperCase().replaceAll("[^A-Z0-9]", "_");
-                    if (safeCode.length() > 15) {
-                         safeCode = safeCode.substring(0, 15);
-                    }
-                    safeCode = safeCode + "_" + java.util.UUID.randomUUID().toString().substring(0, 4).toUpperCase();
-                    newDesig.setDesignationCode(safeCode);
-                    newDesig.setCategory(request.getCategory());
-                    newDesig.setActive(true);
-                    newDesig.setSortOrder(99);
-                    return staffDesignationRepository.save(newDesig);
-                });
+        // Resolve designation: prefer designationCode > designationId > fallback to jobTitle
+        com.project.edusync.hrms.model.entity.StaffDesignation designation;
+        if (StringUtils.hasText(request.getDesignationCode())) {
+            designation = staffDesignationRepository.findByDesignationCodeIgnoreCaseAndActiveTrue(request.getDesignationCode())
+                    .orElseThrow(() -> new EdusyncException("Designation not found for code: " + request.getDesignationCode(), HttpStatus.BAD_REQUEST));
+        } else if (request.getDesignationId() != null) {
+            designation = staffDesignationRepository.findById(request.getDesignationId())
+                    .orElseThrow(() -> new EdusyncException("Designation not found for id: " + request.getDesignationId(), HttpStatus.BAD_REQUEST));
+        } else {
+            designation = staffDesignationRepository.findByDesignationNameIgnoreCase(request.getJobTitle())
+                    .orElseGet(() -> {
+                        com.project.edusync.hrms.model.entity.StaffDesignation newDesig = new com.project.edusync.hrms.model.entity.StaffDesignation();
+                        newDesig.setDesignationName(request.getJobTitle());
+                        String safeCode = request.getJobTitle().toUpperCase().replaceAll("[^A-Z0-9]", "_");
+                        if (safeCode.length() > 15) {
+                             safeCode = safeCode.substring(0, 15);
+                        }
+                        safeCode = safeCode + "_" + java.util.UUID.randomUUID().toString().substring(0, 4).toUpperCase();
+                        newDesig.setDesignationCode(safeCode);
+                        newDesig.setCategory(request.getCategory());
+                        newDesig.setActive(true);
+                        newDesig.setSortOrder(99);
+                        return staffDesignationRepository.save(newDesig);
+                    });
+        }
         staff.setDesignation(designation);
 
         // Note: Staff ID is generated here
@@ -1038,5 +1048,12 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .sum();
 
         return (int) Math.round(minutes / 60.0);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public User findByUsername(String username) {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "username", username));
     }
 }
