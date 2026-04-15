@@ -10,5 +10,6 @@ import java.util.UUID;
 public interface OnboardingTemplateRepository extends JpaRepository<OnboardingTemplate, Long> {
     Optional<OnboardingTemplate> findByUuid(UUID uuid);
     List<OnboardingTemplate> findAllByActiveTrue();
+    boolean existsByTemplateName(String templateName);
 }
 
