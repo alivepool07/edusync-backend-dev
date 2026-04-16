@@ -111,6 +111,10 @@ public class CacheConfig {
                         redisCacheConfiguration().entryTtl(Duration.ofMinutes(15))
                 )
                 .withCacheConfiguration(
+                        CacheNames.STUDENT_EVALUATION_RESULTS,
+                        redisCacheConfiguration().entryTtl(Duration.ofMinutes(10))
+                )
+                .withCacheConfiguration(
                         CacheNames.SEATING_PLAN_PDF,
                         redisCacheConfiguration()
                                 .entryTtl(Duration.ofMinutes(30))

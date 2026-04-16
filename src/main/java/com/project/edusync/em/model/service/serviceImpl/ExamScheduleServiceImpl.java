@@ -13,13 +13,17 @@ import com.project.edusync.em.model.dto.RequestDTO.ExamScheduleRequestDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.EvaluationStructureResponseDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.ExamScheduleResponseDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.TemplateSnapshotResponseDTO;
+import com.project.edusync.em.model.dto.ResponseDTO.TemplateSnapshotQuestionDTO;
 import com.project.edusync.em.model.dto.ResponseDTO.TemplateSnapshotSectionDTO;
 import com.project.edusync.em.model.entity.Exam;
 import com.project.edusync.em.model.entity.ExamSchedule;
 import com.project.edusync.em.model.entity.ExamTemplate;
+import com.project.edusync.em.model.entity.TemplateQuestion;
 import com.project.edusync.em.model.entity.TemplateSection;
+import com.project.edusync.em.model.entity.snapshot.TemplateSnapshotQuestion;
 import com.project.edusync.em.model.entity.snapshot.TemplateSnapshot;
 import com.project.edusync.em.model.entity.snapshot.TemplateSnapshotSection;
+import com.project.edusync.em.model.enums.TemplateSectionType;
 import com.project.edusync.em.model.repository.ExamRepository;
 import com.project.edusync.em.model.repository.ExamScheduleRepository;
 import com.project.edusync.em.model.repository.ExamTemplateRepository;
@@ -144,15 +148,23 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
                 .collect(Collectors.toList());
         for (TemplateSnapshotSection section : orderedSections) {
             List<EvaluationStructureResponseDTO.EvaluationQuestionDTO> questions = new java.util.ArrayList<>();
-            for (int i = 0; i < section.getQuestionCount(); i++) {
+            List<TemplateSnapshotQuestion> sectionQuestions = getSnapshotQuestions(section);
+            for (TemplateSnapshotQuestion question : sectionQuestions) {
                 questions.add(EvaluationStructureResponseDTO.EvaluationQuestionDTO.builder()
-                        .qNo(runningQuestionNo + i)
-                        .maxMarks(section.getMarksPerQuestion())
+                        .qNo(runningQuestionNo++)
+                        .maxMarks(question.getMarks())
+                        .type(question.getType())
+                        .options(question.getOptions())
                         .build());
             }
-            runningQuestionNo += section.getQuestionCount();
             sections.add(EvaluationStructureResponseDTO.EvaluationSectionDTO.builder()
                     .name(section.getName())
+                    .totalQuestions(resolveTotalQuestions(section))
+                    .attemptQuestions(resolveAttemptQuestions(section))
+                    .sectionType(resolveSectionType(section))
+                    .helperText(resolveSectionType(section) == TemplateSectionType.OPTIONAL
+                            ? "Best " + resolveAttemptQuestions(section) + " answers will be considered automatically"
+                            : null)
                     .questions(questions)
                     .build());
         }
@@ -276,6 +288,23 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
                         .sectionOrder(section.getSectionOrder())
                         .questionCount(section.getQuestionCount())
                         .marksPerQuestion(section.getMarksPerQuestion())
+                        .totalQuestions(section.getTotalQuestions() != null ? section.getTotalQuestions() : section.getQuestionCount())
+                        .attemptQuestions(section.getAttemptQuestions() != null
+                                ? section.getAttemptQuestions()
+                                : (section.getTotalQuestions() != null ? section.getTotalQuestions() : section.getQuestionCount()))
+                        .sectionType(normalizeSectionType(section.getSectionType()))
+                        .internalChoiceEnabled(Boolean.TRUE.equals(section.getInternalChoiceEnabled()))
+                        .questions((section.getQuestions() == null ? List.<TemplateQuestion>of() : section.getQuestions()).stream()
+                                .sorted(Comparator.comparing(TemplateQuestion::getQuestionNo))
+                                .map(question -> TemplateSnapshotQuestion.builder()
+                                        .questionNo(question.getQuestionNo())
+                                        .marks(question.getMarks())
+                                        .type(question.getType())
+                                        .options((question.getOptions() == null ? List.<String>of() : question.getOptions()).stream()
+                                                .sorted(String::compareToIgnoreCase)
+                                                .collect(Collectors.toList()))
+                                        .build())
+                                .collect(Collectors.toList()))
                         .build())
                 .collect(Collectors.toList());
 
@@ -302,8 +331,56 @@ public class ExamScheduleServiceImpl implements ExamScheduleService {
                                 .sectionOrder(section.getSectionOrder())
                                 .questionCount(section.getQuestionCount())
                                 .marksPerQuestion(section.getMarksPerQuestion())
+                                .totalQuestions(resolveTotalQuestions(section))
+                                .attemptQuestions(resolveAttemptQuestions(section))
+                                .sectionType(resolveSectionType(section))
+                                .internalChoiceEnabled(Boolean.TRUE.equals(section.getInternalChoiceEnabled()))
+                                .questions(getSnapshotQuestions(section).stream()
+                                        .map(q -> TemplateSnapshotQuestionDTO.builder()
+                                                .questionNo(q.getQuestionNo())
+                                                .marks(q.getMarks())
+                                                .type(q.getType())
+                                                .options(q.getOptions())
+                                                .build())
+                                        .collect(Collectors.toList()))
                                 .build())
                         .collect(Collectors.toList()))
                 .build();
+    }
+
+    private List<TemplateSnapshotQuestion> getSnapshotQuestions(TemplateSnapshotSection section) {
+        if (section.getQuestions() != null && !section.getQuestions().isEmpty()) {
+            return section.getQuestions();
+        }
+        List<TemplateSnapshotQuestion> generated = new java.util.ArrayList<>();
+        int totalQuestions = resolveTotalQuestions(section);
+        for (int i = 1; i <= totalQuestions; i++) {
+            generated.add(TemplateSnapshotQuestion.builder()
+                    .questionNo(i)
+                    .marks(section.getMarksPerQuestion())
+                    .type(com.project.edusync.em.model.enums.TemplateQuestionType.NORMAL)
+                    .options(List.of())
+                    .build());
+        }
+        return generated;
+    }
+
+    private int resolveTotalQuestions(TemplateSnapshotSection section) {
+        return section.getTotalQuestions() != null ? section.getTotalQuestions() : section.getQuestionCount();
+    }
+
+    private int resolveAttemptQuestions(TemplateSnapshotSection section) {
+        return section.getAttemptQuestions() != null ? section.getAttemptQuestions() : resolveTotalQuestions(section);
+    }
+
+    private TemplateSectionType resolveSectionType(TemplateSnapshotSection section) {
+        return normalizeSectionType(section.getSectionType());
+    }
+
+    private TemplateSectionType normalizeSectionType(TemplateSectionType raw) {
+        if (raw == null) {
+            return TemplateSectionType.FIXED;
+        }
+        return raw;
     }
 }
