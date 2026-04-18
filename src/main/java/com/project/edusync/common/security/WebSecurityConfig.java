@@ -36,8 +36,7 @@ public class WebSecurityConfig {
     // Grouping whitelisted URLs for clarity
     private static final String[] AUTH_WHITELIST = {
             "/auth/**",
-            "/public/**", // For any future public-facing school data
-            "/admission/signup" // Self-signup for applicants
+            "/public/**" // For any future public-facing school data
     };
 
     private static final String[] SWAGGER_WHITELIST = {
