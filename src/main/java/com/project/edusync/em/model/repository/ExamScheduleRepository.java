@@ -117,4 +117,26 @@ List<ExamSchedule> findUpcomingForSection(@Param("sectionId") Long sectionId,
             WHERE es.id = :scheduleId
             """)
     Optional<ExamSchedule> findByIdWithTimeslot(@Param("scheduleId") Long scheduleId);
+
+	@Query("""
+			SELECT COUNT(es) > 0
+			FROM ExamSchedule es
+			WHERE es.exam.id = :examId
+			  AND es.academicClass.id = :classId
+			  AND (
+					(:sectionId IS NULL AND es.section IS NULL)
+				 OR (:sectionId IS NOT NULL AND es.section.id = :sectionId)
+			  )
+			  AND es.subject.id = :subjectId
+			  AND es.examDate = :examDate
+			  AND es.timeslot.id = :timeslotId
+			  AND (:excludeScheduleId IS NULL OR es.id <> :excludeScheduleId)
+			""")
+	boolean existsDuplicateSchedule(@Param("examId") Long examId,
+								   @Param("classId") Long classId,
+								   @Param("sectionId") Long sectionId,
+								   @Param("subjectId") Long subjectId,
+								   @Param("examDate") LocalDate examDate,
+								   @Param("timeslotId") Long timeslotId,
+								   @Param("excludeScheduleId") Long excludeScheduleId);
 }
